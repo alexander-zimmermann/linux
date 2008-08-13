@@ -3792,14 +3792,14 @@ static const struct file_operations cpia_fops = {
 	.read		= cpia_read,
 	.mmap		= cpia_mmap,
 	.ioctl          = cpia_ioctl,
+#ifdef CONFIG_COMPAT
 	.compat_ioctl	= v4l_compat_ioctl32,
+#endif
 	.llseek         = no_llseek,
 };
 
 static struct video_device cpia_template = {
-	.owner		= THIS_MODULE,
 	.name		= "CPiA Camera",
-	.type		= VID_TYPE_CAPTURE,
 	.fops           = &cpia_fops,
 };
 

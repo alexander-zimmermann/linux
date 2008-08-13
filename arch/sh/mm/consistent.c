@@ -1,70 +1,83 @@
 /*
  * arch/sh/mm/consistent.c
  *
- * Copyright (C) 2004  Paul Mundt
+ * Copyright (C) 2004 - 2007  Paul Mundt
+ *
+ * Declared coherent memory functions based on arch/x86/kernel/pci-dma_32.c
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  */
 #include <linux/mm.h>
+#include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <asm/cacheflush.h>
 #include <asm/addrspace.h>
 #include <asm/io.h>
 
-void *consistent_alloc(gfp_t gfp, size_t size, dma_addr_t *handle)
+struct dma_coherent_mem {
+	void		*virt_base;
+	u32		device_base;
+	int		size;
+	int		flags;
+	unsigned long	*bitmap;
+};
+
+void *dma_alloc_coherent(struct device *dev, size_t size,
+			   dma_addr_t *dma_handle, gfp_t gfp)
 {
-	struct page *page, *end, *free;
-	void *ret;
-	int order;
+	void *ret, *ret_nocache;
+	int order = get_order(size);
 
-	size = PAGE_ALIGN(size);
-	order = get_order(size);
+	if (dma_alloc_from_coherent(dev, size, dma_handle, &ret))
+		return ret;
 
-	page = alloc_pages(gfp, order);
-	if (!page)
+	ret = (void *)__get_free_pages(gfp, order);
+	if (!ret)
 		return NULL;
-	split_page(page, order);
 
-	ret = page_address(page);
 	memset(ret, 0, size);
-	*handle = virt_to_phys(ret);
-
 	/*
-	 * We must flush the cache before we pass it on to the device
+	 * Pages from the page allocator may have data present in
+	 * cache. So flush the cache before using uncached memory.
 	 */
-	__flush_purge_region(ret, size);
+	dma_cache_sync(dev, ret, size, DMA_BIDIRECTIONAL);
 
-	page = virt_to_page(ret);
-	free = page + (size >> PAGE_SHIFT);
-	end  = page + (1 << order);
-
-	while (++page < end) {
-		/* Free any unused pages */
-		if (page >= free) {
-			__free_page(page);
-		}
+	ret_nocache = ioremap_nocache(virt_to_phys(ret), size);
+	if (!ret_nocache) {
+		free_pages((unsigned long)ret, order);
+		return NULL;
 	}
 
-	return P2SEGADDR(ret);
+	*dma_handle = virt_to_phys(ret);
+	return ret_nocache;
 }
+EXPORT_SYMBOL(dma_alloc_coherent);
 
-void consistent_free(void *vaddr, size_t size)
+void dma_free_coherent(struct device *dev, size_t size,
+			 void *vaddr, dma_addr_t dma_handle)
 {
-	unsigned long addr = P1SEGADDR((unsigned long)vaddr);
-	struct page *page=virt_to_page(addr);
-	int num_pages=(size+PAGE_SIZE-1) >> PAGE_SHIFT;
-	int i;
+	struct dma_coherent_mem *mem = dev ? dev->dma_mem : NULL;
+	int order = get_order(size);
 
-	for(i=0;i<num_pages;i++) {
-		__free_page((page+i));
+	if (!dma_release_from_coherent(dev, order, vaddr)) {
+		WARN_ON(irqs_disabled());	/* for portability */
+		BUG_ON(mem && mem->flags & DMA_MEMORY_EXCLUSIVE);
+		free_pages((unsigned long)phys_to_virt(dma_handle), order);
+		iounmap(vaddr);
 	}
 }
+EXPORT_SYMBOL(dma_free_coherent);
 
-void consistent_sync(void *vaddr, size_t size, int direction)
+void dma_cache_sync(struct device *dev, void *vaddr, size_t size,
+		    enum dma_data_direction direction)
 {
-	void * p1addr = (void*) P1SEGADDR((unsigned long)vaddr);
+#ifdef CONFIG_CPU_SH5
+	void *p1addr = vaddr;
+#else
+	void *p1addr = (void*) P1SEGADDR((unsigned long)vaddr);
+#endif
 
 	switch (direction) {
 	case DMA_FROM_DEVICE:		/* invalidate only */
@@ -80,8 +93,33 @@ void consistent_sync(void *vaddr, size_t size, int direction)
 		BUG();
 	}
 }
+EXPORT_SYMBOL(dma_cache_sync);
 
-EXPORT_SYMBOL(consistent_alloc);
-EXPORT_SYMBOL(consistent_free);
-EXPORT_SYMBOL(consistent_sync);
+int platform_resource_setup_memory(struct platform_device *pdev,
+				   char *name, unsigned long memsize)
+{
+	struct resource *r;
+	dma_addr_t dma_handle;
+	void *buf;
 
+	r = pdev->resource + pdev->num_resources - 1;
+	if (r->flags) {
+		pr_warning("%s: unable to find empty space for resource\n",
+			name);
+		return -EINVAL;
+	}
+
+	buf = dma_alloc_coherent(NULL, memsize, &dma_handle, GFP_KERNEL);
+	if (!buf) {
+		pr_warning("%s: unable to allocate memory\n", name);
+		return -ENOMEM;
+	}
+
+	memset(buf, 0, memsize);
+
+	r->flags = IORESOURCE_MEM;
+	r->start = dma_handle;
+	r->end = r->start + memsize - 1;
+	r->name = name;
+	return 0;
+}

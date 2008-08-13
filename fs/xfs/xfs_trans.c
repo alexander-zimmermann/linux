@@ -567,26 +567,26 @@ xfs_trans_apply_sb_deltas(
 	 */
 	if (!xfs_sb_version_haslazysbcount(&(tp->t_mountp->m_sb))) {
 		if (tp->t_icount_delta)
-			be64_add(&sbp->sb_icount, tp->t_icount_delta);
+			be64_add_cpu(&sbp->sb_icount, tp->t_icount_delta);
 		if (tp->t_ifree_delta)
-			be64_add(&sbp->sb_ifree, tp->t_ifree_delta);
+			be64_add_cpu(&sbp->sb_ifree, tp->t_ifree_delta);
 		if (tp->t_fdblocks_delta)
-			be64_add(&sbp->sb_fdblocks, tp->t_fdblocks_delta);
+			be64_add_cpu(&sbp->sb_fdblocks, tp->t_fdblocks_delta);
 		if (tp->t_res_fdblocks_delta)
-			be64_add(&sbp->sb_fdblocks, tp->t_res_fdblocks_delta);
+			be64_add_cpu(&sbp->sb_fdblocks, tp->t_res_fdblocks_delta);
 	}
 
 	if (tp->t_frextents_delta)
-		be64_add(&sbp->sb_frextents, tp->t_frextents_delta);
+		be64_add_cpu(&sbp->sb_frextents, tp->t_frextents_delta);
 	if (tp->t_res_frextents_delta)
-		be64_add(&sbp->sb_frextents, tp->t_res_frextents_delta);
+		be64_add_cpu(&sbp->sb_frextents, tp->t_res_frextents_delta);
 
 	if (tp->t_dblocks_delta) {
-		be64_add(&sbp->sb_dblocks, tp->t_dblocks_delta);
+		be64_add_cpu(&sbp->sb_dblocks, tp->t_dblocks_delta);
 		whole = 1;
 	}
 	if (tp->t_agcount_delta) {
-		be32_add(&sbp->sb_agcount, tp->t_agcount_delta);
+		be32_add_cpu(&sbp->sb_agcount, tp->t_agcount_delta);
 		whole = 1;
 	}
 	if (tp->t_imaxpct_delta) {
@@ -594,19 +594,19 @@ xfs_trans_apply_sb_deltas(
 		whole = 1;
 	}
 	if (tp->t_rextsize_delta) {
-		be32_add(&sbp->sb_rextsize, tp->t_rextsize_delta);
+		be32_add_cpu(&sbp->sb_rextsize, tp->t_rextsize_delta);
 		whole = 1;
 	}
 	if (tp->t_rbmblocks_delta) {
-		be32_add(&sbp->sb_rbmblocks, tp->t_rbmblocks_delta);
+		be32_add_cpu(&sbp->sb_rbmblocks, tp->t_rbmblocks_delta);
 		whole = 1;
 	}
 	if (tp->t_rblocks_delta) {
-		be64_add(&sbp->sb_rblocks, tp->t_rblocks_delta);
+		be64_add_cpu(&sbp->sb_rblocks, tp->t_rblocks_delta);
 		whole = 1;
 	}
 	if (tp->t_rextents_delta) {
-		be64_add(&sbp->sb_rextents, tp->t_rextents_delta);
+		be64_add_cpu(&sbp->sb_rextents, tp->t_rextents_delta);
 		whole = 1;
 	}
 	if (tp->t_rextslog_delta) {
@@ -889,7 +889,7 @@ shut_us_down:
 
 	tp->t_commit_lsn = commit_lsn;
 	if (nvec > XFS_TRANS_LOGVEC_COUNT) {
-		kmem_free(log_vector, nvec * sizeof(xfs_log_iovec_t));
+		kmem_free(log_vector);
 	}
 
 	/*
@@ -1265,7 +1265,7 @@ xfs_trans_committed(
 		ASSERT(!XFS_LIC_ARE_ALL_FREE(licp));
 		xfs_trans_chunk_committed(licp, tp->t_lsn, abortflag);
 		next_licp = licp->lic_next;
-		kmem_free(licp, sizeof(xfs_log_item_chunk_t));
+		kmem_free(licp);
 		licp = next_licp;
 	}
 
@@ -1322,7 +1322,6 @@ xfs_trans_chunk_committed(
 	xfs_lsn_t		item_lsn;
 	struct xfs_mount	*mp;
 	int			i;
-	SPLDECL(s);
 
 	lidp = licp->lic_descs;
 	for (i = 0; i < licp->lic_unused; i++, lidp++) {
@@ -1363,7 +1362,7 @@ xfs_trans_chunk_committed(
 		 * the test below.
 		 */
 		mp = lip->li_mountp;
-		AIL_LOCK(mp,s);
+		spin_lock(&mp->m_ail_lock);
 		if (XFS_LSN_CMP(item_lsn, lip->li_lsn) > 0) {
 			/*
 			 * This will set the item's lsn to item_lsn
@@ -1372,9 +1371,9 @@ xfs_trans_chunk_committed(
 			 *
 			 * xfs_trans_update_ail() drops the AIL lock.
 			 */
-			xfs_trans_update_ail(mp, lip, item_lsn, s);
+			xfs_trans_update_ail(mp, lip, item_lsn);
 		} else {
-			AIL_UNLOCK(mp, s);
+			spin_unlock(&mp->m_ail_lock);
 		}
 
 		/*

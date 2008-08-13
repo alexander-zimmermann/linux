@@ -28,8 +28,7 @@ void dynamic_irq_init(unsigned int irq)
 	unsigned long flags;
 
 	if (irq >= NR_IRQS) {
-		printk(KERN_ERR "Trying to initialize invalid IRQ%d\n", irq);
-		WARN_ON(1);
+		WARN(1, KERN_ERR "Trying to initialize invalid IRQ%d\n", irq);
 		return;
 	}
 
@@ -47,7 +46,7 @@ void dynamic_irq_init(unsigned int irq)
 	desc->irq_count = 0;
 	desc->irqs_unhandled = 0;
 #ifdef CONFIG_SMP
-	desc->affinity = CPU_MASK_ALL;
+	cpus_setall(desc->affinity);
 #endif
 	spin_unlock_irqrestore(&desc->lock, flags);
 }
@@ -62,8 +61,7 @@ void dynamic_irq_cleanup(unsigned int irq)
 	unsigned long flags;
 
 	if (irq >= NR_IRQS) {
-		printk(KERN_ERR "Trying to cleanup invalid IRQ%d\n", irq);
-		WARN_ON(1);
+		WARN(1, KERN_ERR "Trying to cleanup invalid IRQ%d\n", irq);
 		return;
 	}
 
@@ -71,9 +69,8 @@ void dynamic_irq_cleanup(unsigned int irq)
 	spin_lock_irqsave(&desc->lock, flags);
 	if (desc->action) {
 		spin_unlock_irqrestore(&desc->lock, flags);
-		printk(KERN_ERR "Destroying IRQ%d without calling free_irq\n",
+		WARN(1, KERN_ERR "Destroying IRQ%d without calling free_irq\n",
 			irq);
-		WARN_ON(1);
 		return;
 	}
 	desc->msi_desc = NULL;
@@ -96,8 +93,7 @@ int set_irq_chip(unsigned int irq, struct irq_chip *chip)
 	unsigned long flags;
 
 	if (irq >= NR_IRQS) {
-		printk(KERN_ERR "Trying to install chip for IRQ%d\n", irq);
-		WARN_ON(1);
+		WARN(1, KERN_ERR "Trying to install chip for IRQ%d\n", irq);
 		return -EINVAL;
 	}
 
@@ -304,7 +300,7 @@ static inline void mask_ack_irq(struct irq_desc *desc, int irq)
  *	Note: The caller is expected to handle the ack, clear, mask and
  *	unmask issues if necessary.
  */
-void fastcall
+void
 handle_simple_irq(unsigned int irq, struct irq_desc *desc)
 {
 	struct irqaction *action;
@@ -345,7 +341,7 @@ out_unlock:
  *	it after the associated handler has acknowledged the device, so the
  *	interrupt line is back to inactive.
  */
-void fastcall
+void
 handle_level_irq(unsigned int irq, struct irq_desc *desc)
 {
 	unsigned int cpu = smp_processor_id();
@@ -393,7 +389,7 @@ out_unlock:
  *	for modern forms of interrupt handlers, which handle the flow
  *	details in hardware, transparently.
  */
-void fastcall
+void
 handle_fasteoi_irq(unsigned int irq, struct irq_desc *desc)
 {
 	unsigned int cpu = smp_processor_id();
@@ -452,7 +448,7 @@ out:
  *	the handler was running. If all pending interrupts are handled, the
  *	loop is left.
  */
-void fastcall
+void
 handle_edge_irq(unsigned int irq, struct irq_desc *desc)
 {
 	const unsigned int cpu = smp_processor_id();
@@ -523,7 +519,7 @@ out_unlock:
  *
  *	Per CPU interrupts on SMP machines without locking requirements
  */
-void fastcall
+void
 handle_percpu_irq(unsigned int irq, struct irq_desc *desc)
 {
 	irqreturn_t action_ret;

@@ -11,12 +11,12 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
+#include <linux/of_device.h>
 
 #include <asm/iommu.h>
 #include <asm/irq.h>
 #include <asm/starfire.h>
 #include <asm/prom.h>
-#include <asm/of_device.h>
 #include <asm/oplib.h>
 
 #include "pci_impl.h"
@@ -848,7 +848,8 @@ static int psycho_iommu_init(struct pci_pbm_info *pbm)
 	/* Leave diag mode enabled for full-flushing done
 	 * in pci_iommu.c
 	 */
-	err = iommu_table_init(iommu, IO_TSB_SIZE, 0xc0000000, 0xffffffff);
+	err = iommu_table_init(iommu, IO_TSB_SIZE, 0xc0000000, 0xffffffff,
+			       pbm->numa_node);
 	if (err)
 		return err;
 
@@ -978,6 +979,8 @@ static void __init psycho_pbm_init(struct pci_controller_info *p,
 
 	pbm->next = pci_pbm_root;
 	pci_pbm_root = pbm;
+
+	pbm->numa_node = -1;
 
 	pbm->scan_bus = psycho_scan_bus;
 	pbm->pci_ops = &sun4u_pci_ops;

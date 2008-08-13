@@ -32,9 +32,8 @@
 #include <linux/file.h>
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
+#include <asm/unaligned.h>
 #include "ecryptfs_kernel.h"
-
-struct kmem_cache *ecryptfs_lower_page_cache;
 
 /**
  * ecryptfs_get_locked_page
@@ -102,13 +101,14 @@ static void set_header_info(char *page_virt,
 			    struct ecryptfs_crypt_stat *crypt_stat)
 {
 	size_t written;
-	int save_num_header_extents_at_front =
-		crypt_stat->num_header_extents_at_front;
+	size_t save_num_header_bytes_at_front =
+		crypt_stat->num_header_bytes_at_front;
 
-	crypt_stat->num_header_extents_at_front = 1;
+	crypt_stat->num_header_bytes_at_front =
+		ECRYPTFS_MINIMUM_HEADER_EXTENT_SIZE;
 	ecryptfs_write_header_metadata(page_virt + 20, crypt_stat, &written);
-	crypt_stat->num_header_extents_at_front =
-		save_num_header_extents_at_front;
+	crypt_stat->num_header_bytes_at_front =
+		save_num_header_bytes_at_front;
 }
 
 /**
@@ -134,8 +134,11 @@ ecryptfs_copy_up_encrypted_with_header(struct page *page,
 		loff_t view_extent_num = ((((loff_t)page->index)
 					   * num_extents_per_page)
 					  + extent_num_in_page);
+		size_t num_header_extents_at_front =
+			(crypt_stat->num_header_bytes_at_front
+			 / crypt_stat->extent_size);
 
-		if (view_extent_num < crypt_stat->num_header_extents_at_front) {
+		if (view_extent_num < num_header_extents_at_front) {
 			/* This is a header extent */
 			char *page_virt;
 
@@ -151,15 +154,14 @@ ecryptfs_copy_up_encrypted_with_header(struct page *page,
 			flush_dcache_page(page);
 			if (rc) {
 				printk(KERN_ERR "%s: Error reading xattr "
-				       "region; rc = [%d]\n", __FUNCTION__, rc);
+				       "region; rc = [%d]\n", __func__, rc);
 				goto out;
 			}
 		} else {
 			/* This is an encrypted data extent */
 			loff_t lower_offset =
-				((view_extent_num -
-				  crypt_stat->num_header_extents_at_front)
-				 * crypt_stat->extent_size);
+				((view_extent_num * crypt_stat->extent_size)
+				 - crypt_stat->num_header_bytes_at_front);
 
 			rc = ecryptfs_read_lower_page_segment(
 				page, (lower_offset >> PAGE_CACHE_SHIFT),
@@ -168,7 +170,7 @@ ecryptfs_copy_up_encrypted_with_header(struct page *page,
 			if (rc) {
 				printk(KERN_ERR "%s: Error attempting to read "
 				       "extent at offset [%lld] in the lower "
-				       "file; rc = [%d]\n", __FUNCTION__,
+				       "file; rc = [%d]\n", __func__,
 				       lower_offset, rc);
 				goto out;
 			}
@@ -211,7 +213,7 @@ static int ecryptfs_readpage(struct file *file, struct page *page)
 				       "the encrypted content from the lower "
 				       "file whilst inserting the metadata "
 				       "from the xattr into the header; rc = "
-				       "[%d]\n", __FUNCTION__, rc);
+				       "[%d]\n", __func__, rc);
 				goto out;
 			}
 
@@ -257,8 +259,7 @@ static int fill_zeros_to_end_of_page(struct page *page, unsigned int to)
 	end_byte_in_page = i_size_read(inode) % PAGE_CACHE_SIZE;
 	if (to > end_byte_in_page)
 		end_byte_in_page = to;
-	zero_user_page(page, end_byte_in_page,
-		PAGE_CACHE_SIZE - end_byte_in_page, KM_USER0);
+	zero_user_segment(page, end_byte_in_page, PAGE_CACHE_SIZE);
 out:
 	return 0;
 }
@@ -293,7 +294,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 			if (rc) {
 				printk(KERN_ERR "%s: Error attemping to read "
 				       "lower page segment; rc = [%d]\n",
-				       __FUNCTION__, rc);
+				       __func__, rc);
 				ClearPageUptodate(page);
 				goto out;
 			} else
@@ -308,7 +309,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 					       "from the lower file whilst "
 					       "inserting the metadata from "
 					       "the xattr into the header; rc "
-					       "= [%d]\n", __FUNCTION__, rc);
+					       "= [%d]\n", __func__, rc);
 					ClearPageUptodate(page);
 					goto out;
 				}
@@ -320,7 +321,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 				if (rc) {
 					printk(KERN_ERR "%s: Error reading "
 					       "page; rc = [%d]\n",
-					       __FUNCTION__, rc);
+					       __func__, rc);
 					ClearPageUptodate(page);
 					goto out;
 				}
@@ -331,7 +332,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 			if (rc) {
 				printk(KERN_ERR "%s: Error decrypting page "
 				       "at index [%ld]; rc = [%d]\n",
-				       __FUNCTION__, page->index, rc);
+				       __func__, page->index, rc);
 				ClearPageUptodate(page);
 				goto out;
 			}
@@ -348,7 +349,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 			if (rc) {
 				printk(KERN_ERR "%s: Error on attempt to "
 				       "truncate to (higher) offset [%lld];"
-				       " rc = [%d]\n", __FUNCTION__,
+				       " rc = [%d]\n", __func__,
 				       prev_page_end_size, rc);
 				goto out;
 			}
@@ -358,7 +359,7 @@ static int ecryptfs_prepare_write(struct file *file, struct page *page,
 	 * of page?  Zero it out. */
 	if ((i_size_read(page->mapping->host) == prev_page_end_size)
 	    && (from != 0))
-		zero_user_page(page, 0, PAGE_CACHE_SIZE, KM_USER0);
+		zero_user(page, 0, PAGE_CACHE_SIZE);
 out:
 	return rc;
 }
@@ -372,7 +373,6 @@ out:
  */
 static int ecryptfs_write_inode_size_to_header(struct inode *ecryptfs_inode)
 {
-	u64 file_size;
 	char *file_size_virt;
 	int rc;
 
@@ -381,15 +381,13 @@ static int ecryptfs_write_inode_size_to_header(struct inode *ecryptfs_inode)
 		rc = -ENOMEM;
 		goto out;
 	}
-	file_size = (u64)i_size_read(ecryptfs_inode);
-	file_size = cpu_to_be64(file_size);
-	memcpy(file_size_virt, &file_size, sizeof(u64));
+	put_unaligned_be64(i_size_read(ecryptfs_inode), file_size_virt);
 	rc = ecryptfs_write_lower(ecryptfs_inode, file_size_virt, 0,
 				  sizeof(u64));
 	kfree(file_size_virt);
 	if (rc)
 		printk(KERN_ERR "%s: Error writing file size to header; "
-		       "rc = [%d]\n", __FUNCTION__, rc);
+		       "rc = [%d]\n", __func__, rc);
 out:
 	return rc;
 }
@@ -403,7 +401,6 @@ static int ecryptfs_write_inode_size_to_xattr(struct inode *ecryptfs_inode)
 	struct dentry *lower_dentry =
 		ecryptfs_inode_to_private(ecryptfs_inode)->lower_file->f_dentry;
 	struct inode *lower_inode = lower_dentry->d_inode;
-	u64 file_size;
 	int rc;
 
 	if (!lower_inode->i_op->getxattr || !lower_inode->i_op->setxattr) {
@@ -424,9 +421,7 @@ static int ecryptfs_write_inode_size_to_xattr(struct inode *ecryptfs_inode)
 					   xattr_virt, PAGE_CACHE_SIZE);
 	if (size < 0)
 		size = 8;
-	file_size = (u64)i_size_read(ecryptfs_inode);
-	file_size = cpu_to_be64(file_size);
-	memcpy(xattr_virt, &file_size, sizeof(u64));
+	put_unaligned_be64(i_size_read(ecryptfs_inode), xattr_virt);
 	rc = lower_inode->i_op->setxattr(lower_dentry, ECRYPTFS_XATTR_NAME,
 					 xattr_virt, size, 0);
 	mutex_unlock(&lower_inode->i_mutex);

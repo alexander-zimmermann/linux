@@ -40,9 +40,7 @@
 #define BT_DBG(D...)
 #endif
 
-#define VERSION "0.9"
-
-static int ignore = 0;
+#define VERSION "0.10"
 
 static struct usb_device_id bpa10x_table[] = {
 	/* Tektronix BPA 100/105 (Digianswer) */
@@ -423,6 +421,7 @@ static int bpa10x_send_frame(struct sk_buff *skb)
 		break;
 
 	default:
+		usb_free_urb(urb);
 		return -EILSEQ;
 	}
 
@@ -458,9 +457,6 @@ static int bpa10x_probe(struct usb_interface *intf, const struct usb_device_id *
 	int err;
 
 	BT_DBG("intf %p id %p", intf, id);
-
-	if (ignore)
-		return -ENODEV;
 
 	if (intf->cur_altsetting->desc.bInterfaceNumber != 0)
 		return -ENODEV;
@@ -544,9 +540,6 @@ static void __exit bpa10x_exit(void)
 
 module_init(bpa10x_init);
 module_exit(bpa10x_exit);
-
-module_param(ignore, bool, 0644);
-MODULE_PARM_DESC(ignore, "Ignore devices from the matching table");
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Digianswer Bluetooth USB driver ver " VERSION);

@@ -4,7 +4,6 @@
 #include <asm/system.h>
 #include <asm/pgtable.h>
 
-#define LOAD_OFFSET	(KERNEL_START - KERNEL_TR_PAGE_SIZE)
 #include <asm-generic/vmlinux.lds.h>
 
 #define IVT_TEXT							\
@@ -27,8 +26,8 @@ SECTIONS
 {
   /* Sections to be discarded */
   /DISCARD/ : {
-	*(.exit.text)
-	*(.exit.data)
+	EXIT_TEXT
+	EXIT_DATA
 	*(.exitcall.exit)
 	*(.IA_64.unwind.exit.text)
 	*(.IA_64.unwind_info.exit.text)
@@ -119,12 +118,12 @@ SECTIONS
   .init.text : AT(ADDR(.init.text) - LOAD_OFFSET)
 	{
 	  _sinittext = .;
-	  *(.init.text)
+	  INIT_TEXT
 	  _einittext = .;
 	}
 
   .init.data : AT(ADDR(.init.data) - LOAD_OFFSET)
-	{ *(.init.data) }
+	{ INIT_DATA }
 
 #ifdef CONFIG_BLK_DEV_INITRD
   .init.ramfs : AT(ADDR(.init.ramfs) - LOAD_OFFSET)
@@ -154,6 +153,13 @@ SECTIONS
 	  __start___vtop_patchlist = .;
 	  *(.data.patch.vtop)
 	  __end___vtop_patchlist = .;
+	}
+
+  .data.patch.rse : AT(ADDR(.data.patch.rse) - LOAD_OFFSET)
+	{
+	  __start___rse_patchlist = .;
+	  *(.data.patch.rse)
+	  __end___rse_patchlist = .;
 	}
 
   .data.patch.mckinley_e9 : AT(ADDR(.data.patch.mckinley_e9) - LOAD_OFFSET)
@@ -209,6 +215,9 @@ SECTIONS
   /* Per-cpu data: */
   percpu : { } :percpu
   . = ALIGN(PERCPU_PAGE_SIZE);
+#ifdef	CONFIG_SMP
+  . = . + PERCPU_PAGE_SIZE;	/* cpu0 per-cpu space */
+#endif
   __phys_per_cpu_start = .;
   .data.percpu PERCPU_ADDR : AT(__phys_per_cpu_start - LOAD_OFFSET)
 	{

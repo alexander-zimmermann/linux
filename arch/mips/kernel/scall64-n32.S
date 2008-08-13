@@ -141,7 +141,7 @@ EXPORT(sysn32_call_table)
 	PTR	compat_sys_readv
 	PTR	compat_sys_writev
 	PTR	sys_access			/* 6020 */
-	PTR	sys_pipe
+	PTR	sysm_pipe
 	PTR	compat_sys_select
 	PTR	sys_sched_yield
 	PTR	sys_mremap
@@ -401,7 +401,10 @@ EXPORT(sysn32_call_table)
 	PTR	sys_ioprio_get
 	PTR	compat_sys_utimensat
 	PTR	compat_sys_signalfd		/* 5280 */
-	PTR	compat_sys_timerfd
+	PTR	sys_ni_syscall
 	PTR	sys_eventfd
 	PTR	sys_fallocate
+	PTR	sys_timerfd_create
+	PTR	sys_timerfd_gettime		/* 5285 */
+	PTR	sys_timerfd_settime
 	.size	sysn32_call_table,.-sysn32_call_table

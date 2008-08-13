@@ -32,14 +32,11 @@
 #include <asm/blackfin.h>
 #include <asm/trace.h>
 
-#if CONFIG_BFIN_KERNEL_CLOCK
+#ifdef CONFIG_BFIN_KERNEL_CLOCK
 #include <asm/mach-common/clocks.h>
 #include <asm/mach/mem_init.h>
 #endif
 
-.global __rambase
-.global __ramstart
-.global __ramend
 .extern ___bss_stop
 .extern ___bss_start
 .extern _bf53x_relocate_l1_mem
@@ -188,7 +185,7 @@ ENTRY(__start)
 
 	/* Put The Code for PLL Programming and SDRAM Programming in L1 ISRAM */
 	call _bf53x_relocate_l1_mem;
-#if CONFIG_BFIN_KERNEL_CLOCK
+#ifdef CONFIG_BFIN_KERNEL_CLOCK
 	call _start_dma_code;
 #endif
 
@@ -321,7 +318,7 @@ ENDPROC(_real_start)
 __FINIT
 
 .section .l1.text
-#if CONFIG_BFIN_KERNEL_CLOCK
+#ifdef CONFIG_BFIN_KERNEL_CLOCK
 ENTRY(_start_dma_code)
 
 	/* Enable PHY CLK buffer output */
@@ -401,12 +398,6 @@ ENTRY(_start_dma_code)
 	w[p0] = r0.l;
 	ssync;
 
-	p0.l = LO(EBIU_SDBCTL);
-	p0.h = HI(EBIU_SDBCTL);     /* SDRAM Memory Bank Control Register */
-	r0 = mem_SDBCTL;
-	w[p0] = r0.l;
-	ssync;
-
 	P2.H = hi(EBIU_SDGCTL);
 	P2.L = lo(EBIU_SDGCTL);
 	R0 = [P2];
@@ -439,18 +430,3 @@ ENTRY(_start_dma_code)
 	RTS;
 ENDPROC(_start_dma_code)
 #endif /* CONFIG_BFIN_KERNEL_CLOCK */
-
-.data
-
-/*
- * Set up the usable of RAM stuff. Size of RAM is determined then
- * an initial stack set up at the end.
- */
-
-.align 4
-__rambase:
-.long   0
-__ramstart:
-.long   0
-__ramend:
-.long   0

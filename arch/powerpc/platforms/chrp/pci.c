@@ -198,7 +198,7 @@ static void __init setup_peg2(struct pci_controller *hose, struct device_node *d
 		printk ("RTAS supporting Pegasos OF not found, please upgrade"
 			" your firmware\n");
 	}
-	pci_assign_all_buses = 1;
+	ppc_pci_flags |= PPC_PCI_REASSIGN_ALL_BUS;
 	/* keep the reference to the root node */
 }
 
@@ -367,7 +367,7 @@ static void chrp_pci_fixup_vt8231_ata(struct pci_dev *viaide)
 	viaisa = pci_get_device(PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_8231, NULL);
 	if (!viaisa)
 		return;
-	printk("Fixing VIA IDE, force legacy mode on '%s'\n", viaide->dev.bus_id);
+	dev_info(&viaide->dev, "Fixing VIA IDE, force legacy mode on\n");
 
 	pci_read_config_byte(viaide, PCI_CLASS_PROG, &progif);
 	pci_write_config_byte(viaide, PCI_CLASS_PROG, progif & ~0x5);

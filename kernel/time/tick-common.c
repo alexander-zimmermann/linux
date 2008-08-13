@@ -14,11 +14,13 @@
 #include <linux/cpu.h>
 #include <linux/err.h>
 #include <linux/hrtimer.h>
-#include <linux/irq.h>
+#include <linux/interrupt.h>
 #include <linux/percpu.h>
 #include <linux/profile.h>
 #include <linux/sched.h>
 #include <linux/tick.h>
+
+#include <asm/irq_regs.h>
 
 #include "tick-internal.h"
 
@@ -133,7 +135,7 @@ void tick_setup_periodic(struct clock_event_device *dev, int broadcast)
  */
 static void tick_setup_device(struct tick_device *td,
 			      struct clock_event_device *newdev, int cpu,
-			      cpumask_t cpumask)
+			      const cpumask_t *cpumask)
 {
 	ktime_t next_event;
 	void (*handler)(struct clock_event_device *) = NULL;
@@ -167,8 +169,8 @@ static void tick_setup_device(struct tick_device *td,
 	 * When the device is not per cpu, pin the interrupt to the
 	 * current cpu:
 	 */
-	if (!cpus_equal(newdev->cpumask, cpumask))
-		irq_set_affinity(newdev->irq, cpumask);
+	if (!cpus_equal(newdev->cpumask, *cpumask))
+		irq_set_affinity(newdev->irq, *cpumask);
 
 	/*
 	 * When global broadcasting is active, check if the current
@@ -194,7 +196,6 @@ static int tick_check_new_device(struct clock_event_device *newdev)
 	struct tick_device *td;
 	int cpu, ret = NOTIFY_OK;
 	unsigned long flags;
-	cpumask_t cpumask;
 
 	spin_lock_irqsave(&tick_device_lock, flags);
 
@@ -204,10 +205,9 @@ static int tick_check_new_device(struct clock_event_device *newdev)
 
 	td = &per_cpu(tick_cpu_device, cpu);
 	curdev = td->evtdev;
-	cpumask = cpumask_of_cpu(cpu);
 
 	/* cpu local device ? */
-	if (!cpus_equal(newdev->cpumask, cpumask)) {
+	if (!cpus_equal(newdev->cpumask, cpumask_of_cpu(cpu))) {
 
 		/*
 		 * If the cpu affinity of the device interrupt can not
@@ -220,7 +220,7 @@ static int tick_check_new_device(struct clock_event_device *newdev)
 		 * If we have a cpu local device already, do not replace it
 		 * by a non cpu local device
 		 */
-		if (curdev && cpus_equal(curdev->cpumask, cpumask))
+		if (curdev && cpus_equal(curdev->cpumask, cpumask_of_cpu(cpu)))
 			goto out_bc;
 	}
 
@@ -252,7 +252,7 @@ static int tick_check_new_device(struct clock_event_device *newdev)
 		curdev = NULL;
 	}
 	clockevents_exchange_device(curdev, newdev);
-	tick_setup_device(td, newdev, cpu, cpumask);
+	tick_setup_device(td, newdev, cpu, &cpumask_of_cpu(cpu));
 	if (newdev->features & CLOCK_EVT_FEAT_ONESHOT)
 		tick_oneshot_notify();
 

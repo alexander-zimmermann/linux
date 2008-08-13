@@ -127,7 +127,6 @@ extern void xfs_corruption_error(char *tag, int level, struct xfs_mount *mp,
 
 #if (defined(DEBUG) || defined(INDUCE_IO_ERROR))
 extern int xfs_error_test(int, int *, char *, int, char *, unsigned long);
-extern void xfs_error_test_init(void);
 
 #define	XFS_NUM_INJECT_ERROR				10
 
@@ -173,6 +172,8 @@ extern void xfs_cmn_err(int panic_tag, int level, struct xfs_mount *mp,
 			char *fmt, ...);
 /* PRINTFLIKE3 */
 extern void xfs_fs_cmn_err(int level, struct xfs_mount *mp, char *fmt, ...);
+
+extern void xfs_hex_dump(void *p, int length);
 
 #define xfs_fs_repair_cmn_err(level, mp, fmt, args...) \
 	xfs_fs_cmn_err(level, mp, fmt "  Unmount and run xfs_repair.", ## args)

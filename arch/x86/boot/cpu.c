@@ -1,7 +1,7 @@
 /* -*- linux-c -*- ------------------------------------------------------- *
  *
  *   Copyright (C) 1991, 1992 Linus Torvalds
- *   Copyright 2007 rPath, Inc. - All Rights Reserved
+ *   Copyright 2007-2008 rPath, Inc. - All Rights Reserved
  *
  *   This file is part of the Linux kernel, and is made available under
  *   the terms of the GNU General Public License version 2.
@@ -9,7 +9,7 @@
  * ----------------------------------------------------------------------- */
 
 /*
- * arch/i386/boot/cpu.c
+ * arch/x86/boot/cpu.c
  *
  * Check for obligatory CPU features and abort if the features are not
  * present.
@@ -19,6 +19,8 @@
 #include "bitops.h"
 #include <asm/cpufeature.h>
 
+#include "cpustr.h"
+
 static char *cpu_name(int level)
 {
 	static char buf[6];
@@ -26,6 +28,8 @@ static char *cpu_name(int level)
 	if (level == 64) {
 		return "x86-64";
 	} else {
+		if (level == 15)
+			level = 6;
 		sprintf(buf, "i%d86", level);
 		return buf;
 	}
@@ -35,6 +39,7 @@ int validate_cpu(void)
 {
 	u32 *err_flags;
 	int cpu_level, req_level;
+	const unsigned char *msg_strs;
 
 	check_cpu(&cpu_level, &req_level, &err_flags);
 
@@ -51,13 +56,26 @@ int validate_cpu(void)
 		puts("This kernel requires the following features "
 		     "not present on the CPU:\n");
 
+		msg_strs = (const unsigned char *)x86_cap_strs;
+
 		for (i = 0; i < NCAPINTS; i++) {
 			u32 e = err_flags[i];
 
 			for (j = 0; j < 32; j++) {
-				if (e & 1)
-					printf("%d:%d ", i, j);
-
+				int n = (i << 5)+j;
+				if (*msg_strs < n) {
+					/* Skip to the next string */
+					do {
+						msg_strs++;
+					} while (*msg_strs);
+					msg_strs++;
+				}
+				if (e & 1) {
+					if (*msg_strs == n && msg_strs[1])
+						printf("%s ", msg_strs+1);
+					else
+						printf("%d:%d ", i, j);
+				}
 				e >>= 1;
 			}
 		}

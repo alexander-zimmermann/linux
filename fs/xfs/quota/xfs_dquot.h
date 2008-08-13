@@ -123,11 +123,6 @@ XFS_DQ_IS_LOCKED(xfs_dquot_t *dqp)
 				   vsema(&((dqp)->q_flock)); \
 				   (dqp)->dq_flags &= ~(XFS_DQ_FLOCKED); }
 
-#define XFS_DQ_PINLOCK(dqp)	   mutex_spinlock( \
-				     &(XFS_DQ_TO_QINF(dqp)->qi_pinlock))
-#define XFS_DQ_PINUNLOCK(dqp, s)   mutex_spinunlock( \
-				     &(XFS_DQ_TO_QINF(dqp)->qi_pinlock), s)
-
 #define XFS_DQ_IS_FLUSH_LOCKED(dqp) (issemalocked(&((dqp)->q_flock)))
 #define XFS_DQ_IS_ON_FREELIST(dqp)  ((dqp)->dq_flnext != (dqp))
 #define XFS_DQ_IS_DIRTY(dqp)	((dqp)->dq_flags & XFS_DQ_DIRTY)
@@ -169,7 +164,7 @@ extern void		xfs_qm_dqprint(xfs_dquot_t *);
 
 extern void		xfs_qm_dqdestroy(xfs_dquot_t *);
 extern int		xfs_qm_dqflush(xfs_dquot_t *, uint);
-extern int		xfs_qm_dqpurge(xfs_dquot_t *, uint);
+extern int		xfs_qm_dqpurge(xfs_dquot_t *);
 extern void		xfs_qm_dqunpin_wait(xfs_dquot_t *);
 extern int		xfs_qm_dqlock_nowait(xfs_dquot_t *);
 extern int		xfs_qm_dqflock_nowait(xfs_dquot_t *);
