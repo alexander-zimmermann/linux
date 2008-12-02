@@ -280,11 +280,7 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 			(card->host->ios.clock / 1000);
 
 		if (data->flags & MMC_DATA_WRITE)
-			/*
-			 * The limit is really 250 ms, but that is
-			 * insufficient for some crappy cards.
-			 */
-			limit_us = 300000;
+			limit_us = 250000;
 		else
 			limit_us = 100000;
 

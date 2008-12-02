@@ -1427,12 +1427,12 @@ static int snd_ctl_dev_disconnect(struct snd_device *device)
 	cardnum = card->number;
 	snd_assert(cardnum >= 0 && cardnum < SNDRV_CARDS, return -ENXIO);
 
-	read_lock(&card->ctl_files_rwlock);
+	down_read(&card->controls_rwsem);
 	list_for_each_entry(ctl, &card->ctl_files, list) {
 		wake_up(&ctl->change_sleep);
 		kill_fasync(&ctl->fasync, SIGIO, POLL_ERR);
 	}
-	read_unlock(&card->ctl_files_rwlock);
+	up_read(&card->controls_rwsem);
 
 	if ((err = snd_unregister_device(SNDRV_DEVICE_TYPE_CONTROL,
 					 card, -1)) < 0)

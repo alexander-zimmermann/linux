@@ -279,10 +279,10 @@ static int get_file_caps(struct linux_binprm *bprm)
 	struct vfs_cap_data vcaps;
 	struct inode *inode;
 
-	bprm_clear_caps(bprm);
-
-	if (bprm->file->f_vfsmnt->mnt_flags & MNT_NOSUID)
+	if (bprm->file->f_vfsmnt->mnt_flags & MNT_NOSUID) {
+		bprm_clear_caps(bprm);
 		return 0;
+	}
 
 	dentry = dget(bprm->file->f_dentry);
 	inode = dentry->d_inode;

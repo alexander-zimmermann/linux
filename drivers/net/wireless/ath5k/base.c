@@ -294,9 +294,9 @@ static inline u64 ath5k_extend_tsf(struct ath5k_hw *ah, u32 rstamp)
 }
 
 /* Interrupt handling */
-static int 	ath5k_init(struct ath5k_softc *sc, bool is_resume);
+static int 	ath5k_init(struct ath5k_softc *sc);
 static int 	ath5k_stop_locked(struct ath5k_softc *sc);
-static int 	ath5k_stop_hw(struct ath5k_softc *sc, bool is_suspend);
+static int 	ath5k_stop_hw(struct ath5k_softc *sc);
 static irqreturn_t ath5k_intr(int irq, void *dev_id);
 static void 	ath5k_tasklet_reset(unsigned long data);
 
@@ -584,7 +584,7 @@ ath5k_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	ath5k_led_off(sc);
 
-	ath5k_stop_hw(sc, true);
+	ath5k_stop_hw(sc);
 
 	free_irq(pdev->irq, sc);
 	pci_save_state(pdev);
@@ -599,7 +599,8 @@ ath5k_pci_resume(struct pci_dev *pdev)
 {
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct ath5k_softc *sc = hw->priv;
-	int err;
+	struct ath5k_hw *ah = sc->ah;
+	int i, err;
 
 	pci_restore_state(pdev);
 
@@ -620,10 +621,20 @@ ath5k_pci_resume(struct pci_dev *pdev)
 		goto err_no_irq;
 	}
 
-	err = ath5k_init(sc, true);
+	err = ath5k_init(sc);
 	if (err)
 		goto err_irq;
 	ath5k_led_enable(sc);
+
+	/*
+	 * Reset the key cache since some parts do not
+	 * reset the contents on initial power up or resume.
+	 *
+	 * FIXME: This may need to be revisited when mac80211 becomes
+	 *        aware of suspend/resume.
+	 */
+	for (i = 0; i < AR5K_KEYTABLE_SIZE; i++)
+		ath5k_hw_reset_key(ah, i);
 
 	return 0;
 err_irq:
@@ -646,6 +657,7 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 	struct ath5k_softc *sc = hw->priv;
 	struct ath5k_hw *ah = sc->ah;
 	u8 mac[ETH_ALEN];
+	unsigned int i;
 	int ret;
 
 	ATH5K_DBG(sc, ATH5K_DEBUG_ANY, "devid 0x%x\n", pdev->device);
@@ -662,6 +674,13 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 		goto err;
 	if (ret > 0)
 		__set_bit(ATH_STAT_MRRETRY, sc->status);
+
+	/*
+	 * Reset the key cache since some parts do not
+	 * reset the contents on initial power up.
+	 */
+	for (i = 0; i < AR5K_KEYTABLE_SIZE; i++)
+		ath5k_hw_reset_key(ah, i);
 
 	/*
 	 * Collect the channel list.  The 802.11 layer
@@ -2178,17 +2197,11 @@ ath5k_beacon_config(struct ath5k_softc *sc)
 \********************/
 
 static int
-ath5k_init(struct ath5k_softc *sc, bool is_resume)
+ath5k_init(struct ath5k_softc *sc)
 {
-	struct ath5k_hw *ah = sc->ah;
-	int ret, i;
+	int ret;
 
 	mutex_lock(&sc->lock);
-
-	if (is_resume && !test_bit(ATH_STAT_STARTED, sc->status))
-		goto out_ok;
-
-	__clear_bit(ATH_STAT_STARTED, sc->status);
 
 	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "mode %d\n", sc->opmode);
 
@@ -2207,7 +2220,7 @@ ath5k_init(struct ath5k_softc *sc, bool is_resume)
 	 */
 	sc->curchan = sc->hw->conf.channel;
 	sc->curband = &sc->sbands[sc->curchan->band];
-	ret = ath5k_hw_reset(ah, sc->opmode, sc->curchan, false);
+	ret = ath5k_hw_reset(sc->ah, sc->opmode, sc->curchan, false);
 	if (ret) {
 		ATH5K_ERR(sc, "unable to reset hardware: %d\n", ret);
 		goto done;
@@ -2216,14 +2229,7 @@ ath5k_init(struct ath5k_softc *sc, bool is_resume)
 	 * This is needed only to setup initial state
 	 * but it's best done after a reset.
 	 */
-	ath5k_hw_set_txpower_limit(ah, 0);
-
-	/*
-	 * Reset the key cache since some parts do not reset the
-	 * contents on initial power up or resume from suspend.
-	 */
-	for (i = 0; i < AR5K_KEYTABLE_SIZE; i++)
-		ath5k_hw_reset_key(ah, i);
+	ath5k_hw_set_txpower_limit(sc->ah, 0);
 
 	/*
 	 * Setup the hardware after reset: the key cache
@@ -2243,17 +2249,13 @@ ath5k_init(struct ath5k_softc *sc, bool is_resume)
 		AR5K_INT_RXORN | AR5K_INT_FATAL | AR5K_INT_GLOBAL |
 		AR5K_INT_MIB;
 
-	ath5k_hw_set_intr(ah, sc->imask);
-
-	__set_bit(ATH_STAT_STARTED, sc->status);
-
+	ath5k_hw_set_intr(sc->ah, sc->imask);
 	/* Set ack to be sent at low bit-rates */
-	ath5k_hw_set_ack_bitrate_high(ah, false);
+	ath5k_hw_set_ack_bitrate_high(sc->ah, false);
 
 	mod_timer(&sc->calib_tim, round_jiffies(jiffies +
 			msecs_to_jiffies(ath5k_calinterval * 1000)));
 
-out_ok:
 	ret = 0;
 done:
 	mmiowb();
@@ -2308,7 +2310,7 @@ ath5k_stop_locked(struct ath5k_softc *sc)
  * stop is preempted).
  */
 static int
-ath5k_stop_hw(struct ath5k_softc *sc, bool is_suspend)
+ath5k_stop_hw(struct ath5k_softc *sc)
 {
 	int ret;
 
@@ -2339,9 +2341,6 @@ ath5k_stop_hw(struct ath5k_softc *sc, bool is_suspend)
 		}
 	}
 	ath5k_txbuf_free(sc, sc->bbuf);
-	if (!is_suspend)
-		__clear_bit(ATH_STAT_STARTED, sc->status);
-
 	mmiowb();
 	mutex_unlock(&sc->lock);
 
@@ -2720,12 +2719,12 @@ err:
 
 static int ath5k_start(struct ieee80211_hw *hw)
 {
-	return ath5k_init(hw->priv, false);
+	return ath5k_init(hw->priv);
 }
 
 static void ath5k_stop(struct ieee80211_hw *hw)
 {
-	ath5k_stop_hw(hw->priv, false);
+	ath5k_stop_hw(hw->priv);
 }
 
 static int ath5k_add_interface(struct ieee80211_hw *hw,

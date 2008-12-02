@@ -1323,7 +1323,7 @@ xfs_fs_remount(
 	"XFS: mount option \"%s\" not supported for remount\n", p);
 			return -EINVAL;
 #else
-			break;
+			return 0;
 #endif
 		}
 	}

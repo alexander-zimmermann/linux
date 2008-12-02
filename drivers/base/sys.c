@@ -488,8 +488,7 @@ ssize_t sysdev_store_ulong(struct sys_device *sysdev,
 	if (end == buf)
 		return -EINVAL;
 	*(unsigned long *)(ea->var) = new;
-	/* Always return full write size even if we didn't consume all */
-	return size;
+	return end - buf;
 }
 EXPORT_SYMBOL_GPL(sysdev_store_ulong);
 
@@ -512,8 +511,7 @@ ssize_t sysdev_store_int(struct sys_device *sysdev,
 	if (end == buf || new > INT_MAX || new < INT_MIN)
 		return -EINVAL;
 	*(int *)(ea->var) = new;
-	/* Always return full write size even if we didn't consume all */
-	return size;
+	return end - buf;
 }
 EXPORT_SYMBOL_GPL(sysdev_store_int);
 

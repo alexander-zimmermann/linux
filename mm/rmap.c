@@ -55,33 +55,7 @@
 
 struct kmem_cache *anon_vma_cachep;
 
-/**
- * anon_vma_prepare - attach an anon_vma to a memory region
- * @vma: the memory region in question
- *
- * This makes sure the memory mapping described by 'vma' has
- * an 'anon_vma' attached to it, so that we can associate the
- * anonymous pages mapped into it with that anon_vma.
- *
- * The common case will be that we already have one, but if
- * if not we either need to find an adjacent mapping that we
- * can re-use the anon_vma from (very common when the only
- * reason for splitting a vma has been mprotect()), or we
- * allocate a new one.
- *
- * Anon-vma allocations are very subtle, because we may have
- * optimistically looked up an anon_vma in page_lock_anon_vma()
- * and that may actually touch the spinlock even in the newly
- * allocated vma (it depends on RCU to make sure that the
- * anon_vma isn't actually destroyed).
- *
- * As a result, we need to do proper anon_vma locking even
- * for the new allocation. At the same time, we do not want
- * to do any locking for the common case of already having
- * an anon_vma.
- *
- * This must be called with the mmap_sem held for reading.
- */
+/* This must be called under the mmap_sem. */
 int anon_vma_prepare(struct vm_area_struct *vma)
 {
 	struct anon_vma *anon_vma = vma->anon_vma;
@@ -89,17 +63,20 @@ int anon_vma_prepare(struct vm_area_struct *vma)
 	might_sleep();
 	if (unlikely(!anon_vma)) {
 		struct mm_struct *mm = vma->vm_mm;
-		struct anon_vma *allocated;
+		struct anon_vma *allocated, *locked;
 
 		anon_vma = find_mergeable_anon_vma(vma);
-		allocated = NULL;
-		if (!anon_vma) {
+		if (anon_vma) {
+			allocated = NULL;
+			locked = anon_vma;
+			spin_lock(&locked->lock);
+		} else {
 			anon_vma = anon_vma_alloc();
 			if (unlikely(!anon_vma))
 				return -ENOMEM;
 			allocated = anon_vma;
+			locked = NULL;
 		}
-		spin_lock(&anon_vma->lock);
 
 		/* page_table_lock to protect against threads */
 		spin_lock(&mm->page_table_lock);
@@ -110,7 +87,8 @@ int anon_vma_prepare(struct vm_area_struct *vma)
 		}
 		spin_unlock(&mm->page_table_lock);
 
-		spin_unlock(&anon_vma->lock);
+		if (locked)
+			spin_unlock(&locked->lock);
 		if (unlikely(allocated))
 			anon_vma_free(allocated);
 	}

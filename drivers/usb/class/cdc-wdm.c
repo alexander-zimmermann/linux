@@ -42,8 +42,6 @@ static struct usb_device_id wdm_ids[] = {
 	{ }
 };
 
-MODULE_DEVICE_TABLE (usb, wdm_ids);
-
 #define WDM_MINOR_BASE	176
 
 

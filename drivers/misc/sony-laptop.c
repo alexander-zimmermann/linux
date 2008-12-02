@@ -2315,10 +2315,8 @@ end:
  */
 static int sony_pic_disable(struct acpi_device *device)
 {
-	acpi_status ret = acpi_evaluate_object(device->handle, "_DIS", NULL,
-					       NULL);
-
-	if (ACPI_FAILURE(ret) && ret != AE_NOT_FOUND)
+	if (ACPI_FAILURE(acpi_evaluate_object(device->handle,
+			"_DIS", NULL, NULL)))
 		return -ENXIO;
 
 	dprintk("Device disabled\n");

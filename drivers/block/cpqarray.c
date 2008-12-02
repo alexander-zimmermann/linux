@@ -567,12 +567,7 @@ static int __init cpqarray_init(void)
 			num_cntlrs_reg++;
 	}
 
-	if (num_cntlrs_reg)
-		return 0;
-	else {
-		pci_unregister_driver(&cpqarray_pci_driver);
-		return -ENODEV;
-	}
+	return(num_cntlrs_reg);
 }
 
 /* Function to find the first free pointer into our hba[] array */

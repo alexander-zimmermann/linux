@@ -40,7 +40,7 @@ struct key_user root_key_user = {
 /*
  * install user and user session keyrings for a particular UID
  */
-int install_user_keyrings(struct task_struct *tsk)
+static int install_user_keyrings(struct task_struct *tsk)
 {
 	struct user_struct *user = tsk->user;
 	struct key *uid_keyring, *session_keyring;
