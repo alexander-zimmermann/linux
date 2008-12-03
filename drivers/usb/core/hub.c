@@ -1349,6 +1349,7 @@ void usb_disconnect(struct usb_device **pdev)
 	 */
 	dev_dbg (&udev->dev, "unregistering device\n");
 	usb_disable_device(udev, 0);
+	usb_hcd_synchronize_unlinks(udev);
 
 	usb_unlock_device(udev);
 
@@ -3424,7 +3425,7 @@ int usb_reset_device(struct usb_device *udev)
 						USB_INTERFACE_BOUND)
 					rebind = 1;
 			}
-			if (rebind)
+			if (ret == 0 && rebind)
 				usb_rebind_intf(cintf);
 		}
 	}
