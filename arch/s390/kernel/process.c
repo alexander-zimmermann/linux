@@ -38,6 +38,7 @@
 #include <linux/utsname.h>
 #include <linux/tick.h>
 #include <linux/elfcore.h>
+#include <linux/syscalls.h>
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/system.h>
@@ -136,9 +137,12 @@ static void default_idle(void)
 		return;
 	}
 	trace_hardirqs_on();
+	/* Don't trace preempt off for idle. */
+	stop_critical_timings();
 	/* Wait for external, I/O or machine check interrupt. */
 	__load_psw_mask(psw_kernel_bits | PSW_MASK_WAIT |
 			PSW_MASK_IO | PSW_MASK_EXT);
+	start_critical_timings();
 }
 
 void cpu_idle(void)
@@ -257,13 +261,13 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long new_stackp,
         return 0;
 }
 
-asmlinkage long sys_fork(void)
+SYSCALL_DEFINE0(fork)
 {
 	struct pt_regs *regs = task_pt_regs(current);
 	return do_fork(SIGCHLD, regs->gprs[15], regs, 0, NULL, NULL);
 }
 
-asmlinkage long sys_clone(void)
+SYSCALL_DEFINE0(clone)
 {
 	struct pt_regs *regs = task_pt_regs(current);
 	unsigned long clone_flags;
@@ -290,7 +294,7 @@ asmlinkage long sys_clone(void)
  * do not have enough call-clobbered registers to hold all
  * the information you need.
  */
-asmlinkage long sys_vfork(void)
+SYSCALL_DEFINE0(vfork)
 {
 	struct pt_regs *regs = task_pt_regs(current);
 	return do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD,
@@ -310,7 +314,7 @@ asmlinkage void execve_tail(void)
 /*
  * sys_execve() executes a new program.
  */
-asmlinkage long sys_execve(void)
+SYSCALL_DEFINE0(execve)
 {
 	struct pt_regs *regs = task_pt_regs(current);
 	char *filename;

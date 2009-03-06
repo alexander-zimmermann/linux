@@ -30,7 +30,6 @@ static inline int task_is_pdflush(struct task_struct *task)
 enum writeback_sync_modes {
 	WB_SYNC_NONE,	/* Don't wait on anything */
 	WB_SYNC_ALL,	/* Wait on every mapping */
-	WB_SYNC_HOLD,	/* Hold the inode on sb_dirty for sys_sync() */
 };
 
 /*
@@ -63,7 +62,15 @@ struct writeback_control {
 	unsigned for_writepages:1;	/* This is a writepages() call */
 	unsigned range_cyclic:1;	/* range_start is cyclic */
 	unsigned more_io:1;		/* more io to be dispatched */
-	unsigned range_cont:1;
+	/*
+	 * write_cache_pages() won't update wbc->nr_to_write and
+	 * mapping->writeback_index if no_nrwrite_index_update
+	 * is set.  write_cache_pages() may write more than we
+	 * requested and we want to make sure nr_to_write and
+	 * writeback_index are updated in a consistent manner
+	 * so we use a single control to update them
+	 */
+	unsigned no_nrwrite_index_update:1;
 };
 
 /*

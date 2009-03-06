@@ -281,7 +281,8 @@ static void request_end(struct fuse_conn *fc, struct fuse_req *req)
 			fc->blocked = 0;
 			wake_up_all(&fc->blocked_waitq);
 		}
-		if (fc->num_background == FUSE_CONGESTION_THRESHOLD) {
+		if (fc->num_background == FUSE_CONGESTION_THRESHOLD &&
+		    fc->connected) {
 			clear_bdi_congested(&fc->bdi, READ);
 			clear_bdi_congested(&fc->bdi, WRITE);
 		}
@@ -1056,7 +1057,6 @@ static int fuse_dev_release(struct inode *inode, struct file *file)
 		end_requests(fc, &fc->pending);
 		end_requests(fc, &fc->processing);
 		spin_unlock(&fc->lock);
-		fasync_helper(-1, file, 0, &fc->fasync);
 		fuse_conn_put(fc);
 	}
 

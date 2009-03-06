@@ -717,14 +717,12 @@ pipe_rdwr_fasync(int fd, struct file *filp, int on)
 static int
 pipe_read_release(struct inode *inode, struct file *filp)
 {
-	pipe_read_fasync(-1, filp, 0);
 	return pipe_release(inode, 1, 0);
 }
 
 static int
 pipe_write_release(struct inode *inode, struct file *filp)
 {
-	pipe_write_fasync(-1, filp, 0);
 	return pipe_release(inode, 0, 1);
 }
 
@@ -733,7 +731,6 @@ pipe_rdwr_release(struct inode *inode, struct file *filp)
 {
 	int decr, decw;
 
-	pipe_rdwr_fasync(-1, filp, 0);
 	decr = (filp->f_mode & FMODE_READ) != 0;
 	decw = (filp->f_mode & FMODE_WRITE) != 0;
 	return pipe_release(inode, decr, decw);
@@ -1051,7 +1048,7 @@ int do_pipe(int *fd)
  * sys_pipe() is the normal C calling standard for creating
  * a pipe. It's not the way Unix traditionally does this, though.
  */
-asmlinkage long __weak sys_pipe2(int __user *fildes, int flags)
+SYSCALL_DEFINE2(pipe2, int __user *, fildes, int, flags)
 {
 	int fd[2];
 	int error;
@@ -1067,7 +1064,7 @@ asmlinkage long __weak sys_pipe2(int __user *fildes, int flags)
 	return error;
 }
 
-asmlinkage long __weak sys_pipe(int __user *fildes)
+SYSCALL_DEFINE1(pipe, int __user *, fildes)
 {
 	return sys_pipe2(fildes, 0);
 }

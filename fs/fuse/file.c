@@ -54,7 +54,7 @@ struct fuse_file *fuse_file_alloc(void)
 		ff->reserved_req = fuse_request_alloc();
 		if (!ff->reserved_req) {
 			kfree(ff);
-			ff = NULL;
+			return NULL;
 		} else {
 			INIT_LIST_HEAD(&ff->write_entry);
 			atomic_set(&ff->count, 0);
@@ -101,6 +101,8 @@ void fuse_finish_open(struct inode *inode, struct file *file,
 		file->f_op = &fuse_direct_io_file_operations;
 	if (!(outarg->open_flags & FOPEN_KEEP_CACHE))
 		invalidate_inode_pages2(inode->i_mapping);
+	if (outarg->open_flags & FOPEN_NONSEEKABLE)
+		nonseekable_open(inode, file);
 	ff->fh = outarg->fh;
 	file->private_data = fuse_file_get(ff);
 }
@@ -644,7 +646,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 {
 	pgoff_t index = pos >> PAGE_CACHE_SHIFT;
 
-	*pagep = __grab_cache_page(mapping, index);
+	*pagep = grab_cache_page_write_begin(mapping, index, flags);
 	if (!*pagep)
 		return -ENOMEM;
 	return 0;
@@ -777,7 +779,7 @@ static ssize_t fuse_fill_write_pages(struct fuse_req *req,
 			break;
 
 		err = -ENOMEM;
-		page = __grab_cache_page(mapping, index);
+		page = grab_cache_page_write_begin(mapping, index, 0);
 		if (!page)
 			break;
 
@@ -1448,6 +1450,9 @@ static loff_t fuse_file_llseek(struct file *file, loff_t offset, int origin)
 	mutex_lock(&inode->i_mutex);
 	switch (origin) {
 	case SEEK_END:
+		retval = fuse_update_attributes(inode, NULL, file, NULL);
+		if (retval)
+			return retval;
 		offset += i_size_read(inode);
 		break;
 	case SEEK_CUR:

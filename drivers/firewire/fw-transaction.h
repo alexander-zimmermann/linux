@@ -27,6 +27,7 @@
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
 #include <linux/timer.h>
+#include <linux/types.h>
 #include <linux/workqueue.h>
 
 #define TCODE_IS_READ_REQUEST(tcode)	(((tcode) & ~1) == 4)
@@ -153,6 +154,7 @@ struct fw_packet {
 	size_t header_length;
 	void *payload;
 	size_t payload_length;
+	dma_addr_t payload_bus;
 	u32 timestamp;
 
 	/*
@@ -426,10 +428,13 @@ fw_core_initiate_bus_reset(struct fw_card *card, int short_reset);
 
 void
 fw_send_request(struct fw_card *card, struct fw_transaction *t,
-		int tcode, int node_id, int generation, int speed,
-		unsigned long long offset,
-		void *data, size_t length,
+		int tcode, int destination_id, int generation, int speed,
+		unsigned long long offset, void *data, size_t length,
 		fw_transaction_callback_t callback, void *callback_data);
+
+int fw_run_transaction(struct fw_card *card, int tcode, int destination_id,
+		       int generation, int speed, unsigned long long offset,
+		       void *data, size_t length);
 
 int fw_cancel_transaction(struct fw_card *card,
 			  struct fw_transaction *transaction);

@@ -49,8 +49,8 @@
 #include <asm/processor.h>
 
 #define DRV_NAME	"r6040"
-#define DRV_VERSION	"0.18"
-#define DRV_RELDATE	"13Jul2008"
+#define DRV_VERSION	"0.19"
+#define DRV_RELDATE	"18Dec2008"
 
 /* PHY CHIP Address */
 #define PHY1_ADDR	1	/* For MAC1 */
@@ -214,7 +214,7 @@ static int r6040_phy_read(void __iomem *ioaddr, int phy_addr, int reg)
 	/* Wait for the read bit to be cleared */
 	while (limit--) {
 		cmd = ioread16(ioaddr + MMDIO);
-		if (cmd & MDIO_READ)
+		if (!(cmd & MDIO_READ))
 			break;
 	}
 
@@ -233,7 +233,7 @@ static void r6040_phy_write(void __iomem *ioaddr, int phy_addr, int reg, u16 val
 	/* Wait for the write bit to be cleared */
 	while (limit--) {
 		cmd = ioread16(ioaddr + MMDIO);
-		if (cmd & MDIO_WRITE)
+		if (!(cmd & MDIO_WRITE))
 			break;
 	}
 }
@@ -265,7 +265,7 @@ static void r6040_free_txbufs(struct net_device *dev)
 				le32_to_cpu(lp->tx_insert_ptr->buf),
 				MAX_BUF_SIZE, PCI_DMA_TODEVICE);
 			dev_kfree_skb(lp->tx_insert_ptr->skb_ptr);
-			lp->rx_insert_ptr->skb_ptr = NULL;
+			lp->tx_insert_ptr->skb_ptr = NULL;
 		}
 		lp->tx_insert_ptr = lp->tx_insert_ptr->vndescp;
 	}
@@ -370,7 +370,7 @@ static void r6040_init_mac_regs(struct net_device *dev)
 	/* Reset internal state machine */
 	iowrite16(2, ioaddr + MAC_SM);
 	iowrite16(0, ioaddr + MAC_SM);
-	udelay(5000);
+	mdelay(5);
 
 	/* MAC Bus Control Register */
 	iowrite16(MBCR_DEFAULT, ioaddr + MBCR);
@@ -681,8 +681,10 @@ static irqreturn_t r6040_interrupt(int irq, void *dev_id)
 	struct net_device *dev = dev_id;
 	struct r6040_private *lp = netdev_priv(dev);
 	void __iomem *ioaddr = lp->base;
-	u16 status;
+	u16 misr, status;
 
+	/* Save MIER */
+	misr = ioread16(ioaddr + MIER);
 	/* Mask off RDC MAC interrupt */
 	iowrite16(MSK_INT, ioaddr + MIER);
 	/* Read MISR status and clear */
@@ -702,13 +704,16 @@ static irqreturn_t r6040_interrupt(int irq, void *dev_id)
 			dev->stats.rx_fifo_errors++;
 
 		/* Mask off RX interrupt */
-		iowrite16(ioread16(ioaddr + MIER) & ~RX_INTS, ioaddr + MIER);
+		misr &= ~RX_INTS;
 		netif_rx_schedule(dev, &lp->napi);
 	}
 
 	/* TX interrupt request */
 	if (status & TX_INTS)
 		r6040_tx(dev);
+
+	/* Restore RDC MAC interrupt */
+	iowrite16(misr, ioaddr + MIER);
 
 	return IRQ_HANDLED;
 }
@@ -806,7 +811,7 @@ static void r6040_mac_address(struct net_device *dev)
 	iowrite16(0x01, ioaddr + MCR1); /* Reset MAC */
 	iowrite16(2, ioaddr + MAC_SM); /* Reset internal state machine */
 	iowrite16(0, ioaddr + MAC_SM);
-	udelay(5000);
+	mdelay(5);
 
 	/* Restore MAC Address */
 	adrp = (u16 *) dev->dev_addr;

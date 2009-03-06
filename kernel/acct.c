@@ -277,7 +277,7 @@ static int acct_on(char *name)
  * should be written. If the filename is NULL, accounting will be
  * shutdown.
  */
-asmlinkage long sys_acct(const char __user *name)
+SYSCALL_DEFINE1(acct, const char __user *, name)
 {
 	int error;
 
@@ -548,7 +548,7 @@ static void do_acct_process(struct bsd_acct_struct *acct,
 #endif
 
 	spin_lock_irq(&current->sighand->siglock);
-	tty = current->signal->tty;
+	tty = current->signal->tty;	/* Safe as we hold the siglock */
 	ac.ac_tty = tty ? old_encode_dev(tty_devnum(tty)) : 0;
 	ac.ac_utime = encode_comp_t(jiffies_to_AHZ(cputime_to_jiffies(pacct->ac_utime)));
 	ac.ac_stime = encode_comp_t(jiffies_to_AHZ(cputime_to_jiffies(pacct->ac_stime)));

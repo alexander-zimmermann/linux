@@ -65,15 +65,15 @@ void setbat(int index, unsigned long virt, phys_addr_t phys,
 
 #ifdef HAVE_TLBCAM
 extern unsigned int tlbcam_index;
-extern unsigned long v_mapped_by_tlbcam(unsigned long va);
-extern unsigned long p_mapped_by_tlbcam(unsigned long pa);
+extern phys_addr_t v_mapped_by_tlbcam(unsigned long va);
+extern unsigned long p_mapped_by_tlbcam(phys_addr_t pa);
 #else /* !HAVE_TLBCAM */
 #define v_mapped_by_tlbcam(x)	(0UL)
 #define p_mapped_by_tlbcam(x)	(0UL)
 #endif /* HAVE_TLBCAM */
 
 #ifdef CONFIG_PTE_64BIT
-/* 44x uses an 8kB pgdir because it has 8-byte Linux PTEs. */
+/* Some processors use an 8kB pgdir because they have 8-byte Linux PTEs. */
 #define PGDIR_ORDER	1
 #else
 #define PGDIR_ORDER	0
@@ -288,7 +288,7 @@ int map_page(unsigned long va, phys_addr_t pa, int flags)
 }
 
 /*
- * Map in all of physical memory starting at KERNELBASE.
+ * Map in a big chunk of physical memory starting at KERNELBASE.
  */
 void __init mapin_ram(void)
 {

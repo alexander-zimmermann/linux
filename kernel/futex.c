@@ -1296,13 +1296,16 @@ static int futex_wait(u32 __user *uaddr, struct rw_semaphore *fshared,
 		if (!abs_time)
 			schedule();
 		else {
+			unsigned long slack;
+			slack = current->timer_slack_ns;
+			if (rt_task(current))
+				slack = 0;
 			hrtimer_init_on_stack(&t.timer, CLOCK_MONOTONIC,
 						HRTIMER_MODE_ABS);
 			hrtimer_init_sleeper(&t, current);
-			t.timer.expires = *abs_time;
+			hrtimer_set_expires_range_ns(&t.timer, *abs_time, slack);
 
-			hrtimer_start(&t.timer, t.timer.expires,
-						HRTIMER_MODE_ABS);
+			hrtimer_start_expires(&t.timer, HRTIMER_MODE_ABS);
 			if (!hrtimer_active(&t.timer))
 				t.task = NULL;
 
@@ -1404,7 +1407,7 @@ static int futex_lock_pi(u32 __user *uaddr, struct rw_semaphore *fshared,
 		hrtimer_init_on_stack(&to->timer, CLOCK_REALTIME,
 				      HRTIMER_MODE_ABS);
 		hrtimer_init_sleeper(to, current);
-		to->timer.expires = *time;
+		hrtimer_set_expires(&to->timer, *time);
 	}
 
 	q.pi_state = NULL;
@@ -1797,9 +1800,8 @@ pi_faulted:
  * @head: pointer to the list-head
  * @len: length of the list-head, as userspace expects
  */
-asmlinkage long
-sys_set_robust_list(struct robust_list_head __user *head,
-		    size_t len)
+SYSCALL_DEFINE2(set_robust_list, struct robust_list_head __user *, head,
+		size_t, len)
 {
 	if (!futex_cmpxchg_enabled)
 		return -ENOSYS;
@@ -1820,9 +1822,9 @@ sys_set_robust_list(struct robust_list_head __user *head,
  * @head_ptr: pointer to a list-head pointer, the kernel fills it in
  * @len_ptr: pointer to a length field, the kernel fills in the header size
  */
-asmlinkage long
-sys_get_robust_list(int pid, struct robust_list_head __user * __user *head_ptr,
-		    size_t __user *len_ptr)
+SYSCALL_DEFINE3(get_robust_list, int, pid,
+		struct robust_list_head __user * __user *, head_ptr,
+		size_t __user *, len_ptr)
 {
 	struct robust_list_head __user *head;
 	unsigned long ret;
@@ -2036,9 +2038,9 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 }
 
 
-asmlinkage long sys_futex(u32 __user *uaddr, int op, u32 val,
-			  struct timespec __user *utime, u32 __user *uaddr2,
-			  u32 val3)
+SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
+		struct timespec __user *, utime, u32 __user *, uaddr2,
+		u32, val3)
 {
 	struct timespec ts;
 	ktime_t t, *tp = NULL;

@@ -52,11 +52,9 @@ static enum hrtimer_restart timerfd_tmrproc(struct hrtimer *htmr)
 
 static ktime_t timerfd_get_remaining(struct timerfd_ctx *ctx)
 {
-	ktime_t now, remaining;
+	ktime_t remaining;
 
-	now = ctx->tmr.base->get_time();
-	remaining = ktime_sub(ctx->tmr.expires, now);
-
+	remaining = hrtimer_expires_remaining(&ctx->tmr);
 	return remaining.tv64 < 0 ? ktime_set(0, 0): remaining;
 }
 
@@ -74,7 +72,7 @@ static void timerfd_setup(struct timerfd_ctx *ctx, int flags,
 	ctx->ticks = 0;
 	ctx->tintv = timespec_to_ktime(ktmr->it_interval);
 	hrtimer_init(&ctx->tmr, ctx->clockid, htmode);
-	ctx->tmr.expires = texp;
+	hrtimer_set_expires(&ctx->tmr, texp);
 	ctx->tmr.function = timerfd_tmrproc;
 	if (texp.tv64 != 0)
 		hrtimer_start(&ctx->tmr, texp, htmode);
@@ -179,7 +177,7 @@ static struct file *timerfd_fget(int fd)
 	return file;
 }
 
-asmlinkage long sys_timerfd_create(int clockid, int flags)
+SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
 {
 	int ufd;
 	struct timerfd_ctx *ctx;
@@ -210,9 +208,9 @@ asmlinkage long sys_timerfd_create(int clockid, int flags)
 	return ufd;
 }
 
-asmlinkage long sys_timerfd_settime(int ufd, int flags,
-				    const struct itimerspec __user *utmr,
-				    struct itimerspec __user *otmr)
+SYSCALL_DEFINE4(timerfd_settime, int, ufd, int, flags,
+		const struct itimerspec __user *, utmr,
+		struct itimerspec __user *, otmr)
 {
 	struct file *file;
 	struct timerfd_ctx *ctx;
@@ -267,7 +265,7 @@ asmlinkage long sys_timerfd_settime(int ufd, int flags,
 	return 0;
 }
 
-asmlinkage long sys_timerfd_gettime(int ufd, struct itimerspec __user *otmr)
+SYSCALL_DEFINE2(timerfd_gettime, int, ufd, struct itimerspec __user *, otmr)
 {
 	struct file *file;
 	struct timerfd_ctx *ctx;

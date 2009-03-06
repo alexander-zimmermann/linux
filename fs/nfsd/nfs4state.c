@@ -61,7 +61,6 @@
 static time_t lease_time = 90;     /* default lease time */
 static time_t user_lease_time = 90;
 static time_t boot_time;
-static int in_grace = 1;
 static u32 current_ownerid = 1;
 static u32 current_fileid = 1;
 static u32 current_delegid = 1;
@@ -1640,7 +1639,7 @@ nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_sta
 		case NFS4_OPEN_CLAIM_NULL:
 			/* Let's not give out any delegations till everyone's
 			 * had the chance to reclaim theirs.... */
-			if (nfs4_in_grace())
+			if (locks_in_grace())
 				goto out;
 			if (!atomic_read(&cb->cb_set) || !sop->so_confirmed)
 				goto out;
@@ -1816,12 +1815,15 @@ out:
 	return status;
 }
 
+struct lock_manager nfsd4_manager = {
+};
+
 static void
-end_grace(void)
+nfsd4_end_grace(void)
 {
 	dprintk("NFSD: end of grace period\n");
 	nfsd4_recdir_purge_old();
-	in_grace = 0;
+	locks_end_grace(&nfsd4_manager);
 }
 
 static time_t
@@ -1838,8 +1840,8 @@ nfs4_laundromat(void)
 	nfs4_lock_state();
 
 	dprintk("NFSD: laundromat service - starting\n");
-	if (in_grace)
-		end_grace();
+	if (locks_in_grace())
+		nfsd4_end_grace();
 	list_for_each_safe(pos, next, &client_lru) {
 		clp = list_entry(pos, struct nfs4_client, cl_lru);
 		if (time_after((unsigned long)clp->cl_time, (unsigned long)cutoff)) {
@@ -1974,7 +1976,7 @@ check_special_stateids(svc_fh *current_fh, stateid_t *stateid, int flags)
 		return nfserr_bad_stateid;
 	else if (ONE_STATEID(stateid) && (flags & RD_STATE))
 		return nfs_ok;
-	else if (nfs4_in_grace()) {
+	else if (locks_in_grace()) {
 		/* Answer in remaining cases depends on existance of
 		 * conflicting state; so we must wait out the grace period. */
 		return nfserr_grace;
@@ -1993,7 +1995,7 @@ check_special_stateids(svc_fh *current_fh, stateid_t *stateid, int flags)
 static inline int
 io_during_grace_disallowed(struct inode *inode, int flags)
 {
-	return nfs4_in_grace() && (flags & (RD_STATE | WR_STATE))
+	return locks_in_grace() && (flags & (RD_STATE | WR_STATE))
 		&& mandatory_lock(inode);
 }
 
@@ -2693,10 +2695,10 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	filp = lock_stp->st_vfs_file;
 
 	status = nfserr_grace;
-	if (nfs4_in_grace() && !lock->lk_reclaim)
+	if (locks_in_grace() && !lock->lk_reclaim)
 		goto out;
 	status = nfserr_no_grace;
-	if (!nfs4_in_grace() && lock->lk_reclaim)
+	if (!locks_in_grace() && lock->lk_reclaim)
 		goto out;
 
 	locks_init_lock(&file_lock);
@@ -2767,6 +2769,25 @@ out:
 }
 
 /*
+ * The NFSv4 spec allows a client to do a LOCKT without holding an OPEN,
+ * so we do a temporary open here just to get an open file to pass to
+ * vfs_test_lock.  (Arguably perhaps test_lock should be done with an
+ * inode operation.)
+ */
+static int nfsd_test_lock(struct svc_rqst *rqstp, struct svc_fh *fhp, struct file_lock *lock)
+{
+	struct file *file;
+	int err;
+
+	err = nfsd_open(rqstp, fhp, S_IFREG, NFSD_MAY_READ, &file);
+	if (err)
+		return err;
+	err = vfs_test_lock(file, lock);
+	nfsd_close(file);
+	return err;
+}
+
+/*
  * LOCKT operation
  */
 __be32
@@ -2774,12 +2795,11 @@ nfsd4_lockt(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	    struct nfsd4_lockt *lockt)
 {
 	struct inode *inode;
-	struct file file;
 	struct file_lock file_lock;
 	int error;
 	__be32 status;
 
-	if (nfs4_in_grace())
+	if (locks_in_grace())
 		return nfserr_grace;
 
 	if (check_lock_length(lockt->lt_offset, lockt->lt_length))
@@ -2822,7 +2842,6 @@ nfsd4_lockt(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		file_lock.fl_owner = (fl_owner_t)lockt->lt_stateowner;
 	file_lock.fl_pid = current->tgid;
 	file_lock.fl_flags = FL_POSIX;
-	file_lock.fl_lmops = &nfsd_posix_mng_ops;
 
 	file_lock.fl_start = lockt->lt_offset;
 	if ((lockt->lt_length == ~(u64)0) || LOFF_OVERFLOW(lockt->lt_offset, lockt->lt_length))
@@ -2832,16 +2851,8 @@ nfsd4_lockt(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 
 	nfs4_transform_lock_offset(&file_lock);
 
-	/* vfs_test_lock uses the struct file _only_ to resolve the inode.
-	 * since LOCKT doesn't require an OPEN, and therefore a struct
-	 * file may not exist, pass vfs_test_lock a struct file with
-	 * only the dentry:inode set.
-	 */
-	memset(&file, 0, sizeof (struct file));
-	file.f_path.dentry = cstate->current_fh.fh_dentry;
-
 	status = nfs_ok;
-	error = vfs_test_lock(&file, &file_lock);
+	error = nfsd_test_lock(rqstp, &cstate->current_fh, &file_lock);
 	if (error) {
 		status = nfserrno(error);
 		goto out;
@@ -3192,9 +3203,9 @@ __nfs4_state_start(void)
 	unsigned long grace_time;
 
 	boot_time = get_seconds();
-	grace_time = get_nfs_grace_period();
+	grace_time = get_nfs4_grace_period();
 	lease_time = user_lease_time;
-	in_grace = 1;
+	locks_start_grace(&nfsd4_manager);
 	printk(KERN_INFO "NFSD: starting %ld-second grace period\n",
 	       grace_time/HZ);
 	laundry_wq = create_singlethread_workqueue("nfsd4");
@@ -3211,12 +3222,6 @@ nfs4_state_start(void)
 	__nfs4_state_start();
 	nfs4_init = 1;
 	return;
-}
-
-int
-nfs4_in_grace(void)
-{
-	return in_grace;
 }
 
 time_t
@@ -3265,6 +3270,7 @@ nfs4_state_shutdown(void)
 {
 	cancel_rearming_delayed_workqueue(laundry_wq, &laundromat_work);
 	destroy_workqueue(laundry_wq);
+	locks_end_grace(&nfsd4_manager);
 	nfs4_lock_state();
 	nfs4_release_reclaim();
 	__nfs4_state_shutdown();
@@ -3288,17 +3294,17 @@ int
 nfs4_reset_recoverydir(char *recdir)
 {
 	int status;
-	struct nameidata nd;
+	struct path path;
 
-	status = path_lookup(recdir, LOOKUP_FOLLOW, &nd);
+	status = kern_path(recdir, LOOKUP_FOLLOW, &path);
 	if (status)
 		return status;
 	status = -ENOTDIR;
-	if (S_ISDIR(nd.path.dentry->d_inode->i_mode)) {
+	if (S_ISDIR(path.dentry->d_inode->i_mode)) {
 		nfs4_set_recdir(recdir);
 		status = 0;
 	}
-	path_put(&nd.path);
+	path_put(&path);
 	return status;
 }
 
