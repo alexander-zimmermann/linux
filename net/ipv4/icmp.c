@@ -249,7 +249,7 @@ static inline void icmp_xmit_unlock(struct sock *sk)
  * 	Shared between ICMPv4 and ICMPv6.
  */
 #define XRLIM_BURST_FACTOR 6
-int xrlim_allow(struct dst_entry *dst, int timeout)
+inline int xrlim_allow(struct dst_entry *dst, int timeout)
 {
 	unsigned long now, token = dst->rate_tokens;
 	int rc = 0;
@@ -267,7 +267,7 @@ int xrlim_allow(struct dst_entry *dst, int timeout)
 	return rc;
 }
 
-static inline int icmpv4_xrlim_allow(struct net *net, struct rtable *rt,
+int icmpv4_xrlim_allow(struct net *net, struct rtable *rt,
 		int type, int code)
 {
 	struct dst_entry *dst = &rt->u.dst;

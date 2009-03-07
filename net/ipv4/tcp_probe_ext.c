@@ -35,19 +35,19 @@ MODULE_DESCRIPTION("TCP cwnd snooper");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.1");
 
-static int port __read_mostly = 0;
+static int port = 0;
 MODULE_PARM_DESC(port, "Port to match (0=all)");
 module_param(port, int, 0);
 
-static int bufsize __read_mostly = 4096;
+static int bufsize = 4096;
 MODULE_PARM_DESC(bufsize, "Log buffer size in packets (4096)");
 module_param(bufsize, int, 0);
 
-static int full __read_mostly;
+static int full;
 MODULE_PARM_DESC(full, "Full log (1=every ack packet received,  0=only cwnd changes)");
 module_param(full, int, 0);
 
-static const char procname[] = "tcpprobe";
+static const char procname[] = "tcpprobe_ext";
 
 struct tcp_log {
 	ktime_t tstamp;
@@ -112,7 +112,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
 			p->snd_wnd = tp->snd_wnd;
-			p->ssthresh = tcp_current_ssthresh(sk);
+			p->ssthresh = tp->snd_ssthresh;
+			//p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
@@ -153,8 +154,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
 
 	return snprintf(tbuf, n,
-			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
-			" %d %#x %#x %u %u %u %u\n",
+			"%lu.%09lu " "%03u.%03u.%03u.%03u" ":%05u " "%03u.%03u.%03u.%03u" ":%05u"
+			" %d %#x %#x %11u %11u %11u %11u\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -167,8 +168,19 @@ static int tcpprobe_sprint(char *tbuf, int n)
 static ssize_t tcpprobe_write(struct file *file, const char __user *buf, size_t len, loff_t *ppos)
 {
 	if (!buf || len < 0) return -EINVAL;
-	port = (int) simple_strtoul(buf, NULL, 10);
-	pr_info("TCP probe port changed (port=%d)\n", port);
+	if (!strncmp("full", buf, 4))
+	{
+		full = 1;
+		pr_info("TCP probe changed to full logging\n");
+	} else if(!strncmp("partial", buf, 7))
+	{
+		full = 0;
+		pr_info("TCP probe changed to change-only logging\n");
+	} else
+	{
+		port = (int) simple_strtoul(buf, NULL, 10);
+		pr_info("TCP probe port changed (port=%d)\n", port);
+	}
 	return len;
 }
 
@@ -180,7 +192,7 @@ static ssize_t tcpprobe_read(struct file *file, char __user *buf, size_t len, lo
 		return -EINVAL;
 
 	while (cnt < len) {
-		char tbuf[128];
+		char tbuf[256];
 		int width;
 
 		/* Wait for data in buffer */

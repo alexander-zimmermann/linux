@@ -96,6 +96,7 @@ enum {
 #define TCP_QUICKACK		12	/* Block/reenable quick acks */
 #define TCP_CONGESTION		13	/* Congestion control algorithm */
 #define TCP_MD5SIG		14	/* TCP MD5 Signature (RFC2385) */
+#define TCP_ICMP                21      /* Act on ICMP for congestion control decisions */
 
 #define TCPI_OPT_TIMESTAMPS	1
 #define TCPI_OPT_SACK		2
@@ -157,6 +158,13 @@ struct tcp_info
 	__u32	tcpi_rcv_space;
 
 	__u32	tcpi_total_retrans;
+
+	/* Some extended state vars */
+ 	__u32	rcv_nxt;	/* What we want to receive next 	*/
+ 	__u32	snd_nxt;	/* Next sequence we send		*/
+ 	__u32	snd_una;	/* First byte we want an ack for	*/
+	__u32	rcv_tstamp;	/* timestamp of last received ACK (for keepalives) */
+	__u32	lsndtime;	/* timestamp of last sent data packet (for restart window) */
 };
 
 /* for TCP_MD5SIG socket option */
@@ -340,6 +348,7 @@ struct tcp_sock {
 	u32	fackets_out;	/* FACK'd packets			*/
 	u32	tso_deferred;
 	u32	bytes_acked;	/* Appropriate Byte Counting - RFC3465 */
+	u8      act_on_icmps;
 
 	/* from STCP, retrans queue hinting */
 	struct sk_buff* lost_skb_hint;

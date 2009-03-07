@@ -1427,7 +1427,7 @@ out:
 static int ip_error(struct sk_buff *skb)
 {
 	struct rtable *rt = skb->rtable;
-	unsigned long now;
+	//unsigned long now;
 	int code;
 
 	switch (rt->u.dst.error) {
@@ -1447,6 +1447,7 @@ static int ip_error(struct sk_buff *skb)
 			break;
 	}
 
+	/*
 	now = jiffies;
 	rt->u.dst.rate_tokens += now - rt->u.dst.rate_last;
 	if (rt->u.dst.rate_tokens > ip_rt_error_burst)
@@ -1455,7 +1456,15 @@ static int ip_error(struct sk_buff *skb)
 	if (rt->u.dst.rate_tokens >= ip_rt_error_cost) {
 		rt->u.dst.rate_tokens -= ip_rt_error_cost;
 		icmp_send(skb, ICMP_DEST_UNREACH, code, 0);
-	}
+	}*/
+
+	struct net *net;
+	net = dev_net(rt->u.dst.dev);
+	if (icmpv4_xrlim_allow(net, rt, ICMP_DEST_UNREACH, code))
+	{
+		icmp_send(skb, ICMP_DEST_UNREACH, code, 0);
+	};
+
 
 out:	kfree_skb(skb);
 	return 0;
