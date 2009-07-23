@@ -2265,14 +2265,6 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_rcv_space = tp->rcvq_space.space;
 
 	info->tcpi_total_retrans = tp->total_retrans;
-
-	/* Additional state vars */
-	info->rcv_nxt    = tp->rcv_nxt;
-	info->snd_nxt    = tp->snd_nxt;
-	info->snd_una    = tp->snd_una;
-	info->rcv_tstamp = tp->rcv_tstamp;
-	info->lsndtime = tp->lsndtime;
-
 }
 
 EXPORT_SYMBOL_GPL(tcp_get_info);

@@ -1827,8 +1827,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 	/* See draft-stevens-tcpca-spec-01 for discussion of the
 	 * initialization of these values.
 	 */
-	//tp->snd_ssthresh = 0x7fffffff;	/* Infinity */
-	tp->snd_ssthresh = sysctl_tcp_max_ssthresh;
+	tp->snd_ssthresh = 0x7fffffff;	/* Infinity */
 	tp->snd_cwnd_clamp = ~0;
 	tp->mss_cache = 536;
 
