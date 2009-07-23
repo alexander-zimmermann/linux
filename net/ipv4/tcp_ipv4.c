@@ -80,7 +80,6 @@
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
 
-
 int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
 
@@ -315,8 +314,6 @@ static void do_pmtu_discovery(struct sock *sk, struct iphdr *iph, u32 mtu)
 		tcp_simple_retransmit(sk);
 	} /* else let the usual retransmit timer handle it */
 }
-
-
 
 /*
  * This routine is called by the ICMP module when it gets some
@@ -1838,7 +1835,6 @@ static int tcp_v4_init_sock(struct sock *sk)
 
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
-
 
 	atomic_inc(&tcp_sockets_allocated);
 

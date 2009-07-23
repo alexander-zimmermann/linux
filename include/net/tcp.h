@@ -1204,7 +1204,7 @@ static inline struct sk_buff *tcp_write_queue_next(struct sock *sk, struct sk_bu
 #define tcp_for_write_queue_from_safe(skb, tmp, sk)			\
 	skb_queue_walk_from_safe(&(sk)->sk_write_queue, skb, tmp)
 
-#define retrans_overstepped(sk, boundary) (5*(now - tcp_sk(sk)->retrans_stamp) >=  (1 << boundary))
+#define retrans_overstepped(sk, boundary) (inet_csk(sk)->icsk_retransmits && (tcp_time_stamp - tcp_sk(sk)->retrans_stamp) >= TCP_RTO_MIN*(2 << boundary))
 
 static inline struct sk_buff *tcp_send_head(struct sock *sk)
 {
