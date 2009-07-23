@@ -59,7 +59,6 @@
 #include <linux/jhash.h>
 #include <linux/init.h>
 #include <linux/times.h>
-#include <linux/list.h>
 
 #include <net/net_namespace.h>
 #include <net/icmp.h>
@@ -71,7 +70,6 @@
 #include <net/timewait_sock.h>
 #include <net/xfrm.h>
 #include <net/netdma.h>
-#include <asm/unaligned.h>
 
 #include <linux/inet.h>
 #include <linux/ipv6.h>
@@ -82,8 +80,6 @@
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
 
-#include "tcp_ipv4.h"
-//#define ICMP_SECURITY_MODE 1
 
 int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
@@ -321,11 +317,6 @@ static void do_pmtu_discovery(struct sock *sk, struct iphdr *iph, u32 mtu)
 }
 
 
-/*
- * Diese Liste speichert die Sequenznummern der zurueckkommenden
- * ICMP Pakete zwischen SND.UNA und SND.NXT fuer den Security Mode
- */
-struct list_head* icmp_list;
 
 /*
  * This routine is called by the ICMP module when it gets some
@@ -1848,10 +1839,6 @@ static int tcp_v4_init_sock(struct sock *sk)
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
-#ifdef ICMP_SECURITY_MODE
-	icmp_list = kmalloc(sizeof(struct icmp_unreach_list), GFP_ATOMIC);
-	INIT_LIST_HEAD(icmp_list);
-#endif
 
 	atomic_inc(&tcp_sockets_allocated);
 

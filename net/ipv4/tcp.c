@@ -2170,7 +2170,6 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		break;
 #endif
 
-
 	default:
 		err = -ENOPROTOOPT;
 		break;
