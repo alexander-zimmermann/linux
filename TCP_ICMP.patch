@@ -1,0 +1,109 @@
+diff -BNaur vanilla-2.6.28.7/include/net/tcp.h vanilla-2.6.28.7-icmp/include/net/tcp.h
+--- vanilla-2.6.28.7/include/net/tcp.h	2009-07-23 15:33:14.000000000 +0200
++++ vanilla-2.6.28.7-icmp/include/net/tcp.h	2009-07-23 15:35:42.000000000 +0200
+@@ -1204,6 +1204,8 @@
+ #define tcp_for_write_queue_from_safe(skb, tmp, sk)			\
+ 	skb_queue_walk_from_safe(&(sk)->sk_write_queue, skb, tmp)
+ 
++#define retrans_overstepped(sk, boundary) (inet_csk(sk)->icsk_retransmits && (tcp_time_stamp - tcp_sk(sk)->retrans_stamp) >= TCP_RTO_MIN*(2 << boundary))
++
+ static inline struct sk_buff *tcp_send_head(struct sock *sk)
+ {
+ 	return sk->sk_send_head;
+diff -BNaur vanilla-2.6.28.7/net/ipv4/tcp_ipv4.c vanilla-2.6.28.7-icmp/net/ipv4/tcp_ipv4.c
+--- vanilla-2.6.28.7/net/ipv4/tcp_ipv4.c	2009-07-23 15:33:28.000000000 +0200
++++ vanilla-2.6.28.7-icmp/net/ipv4/tcp_ipv4.c	2009-07-23 15:35:30.000000000 +0200
+@@ -335,11 +335,14 @@
+ {
+ 	struct iphdr *iph = (struct iphdr *)skb->data;
+ 	struct tcphdr *th = (struct tcphdr *)(skb->data + (iph->ihl << 2));
++
++	struct inet_connection_sock *icsk;
+ 	struct tcp_sock *tp;
+ 	struct inet_sock *inet;
+ 	const int type = icmp_hdr(skb)->type;
+ 	const int code = icmp_hdr(skb)->code;
+ 	struct sock *sk;
++	struct sk_buff *skb_r;
+ 	__u32 seq;
+ 	int err;
+ 	struct net *net = dev_net(skb->dev);
+@@ -370,6 +373,7 @@
+ 	if (sk->sk_state == TCP_CLOSE)
+ 		goto out;
+ 
++	icsk = inet_csk(sk);
+ 	tp = tcp_sk(sk);
+ 	seq = ntohl(th->seq);
+ 	if (sk->sk_state != TCP_LISTEN &&
+@@ -396,6 +400,34 @@
+ 		}
+ 
+ 		err = icmp_err_convert[code].errno;
++
++		/* check if ICMP unreachable messages allow revert of back-off */
++                if ((code != ICMP_NET_UNREACH && code != ICMP_HOST_UNREACH) || seq != tp->snd_una 
++		|| !icsk->icsk_retransmits || !icsk->icsk_backoff) break;
++
++                icsk->icsk_backoff--;
++                icsk->icsk_rto >>= 1;
++
++                skb_r = skb_peek(&sk->sk_write_queue);
++                BUG_ON(!skb_r);
++
++		if (sock_owned_by_user(sk)) {
++                        // Deferring retransmission clocked by ICMP due to locked socket.
++                        inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
++                                        min(icsk->icsk_rto, TCP_RESOURCE_PROBE_INTERVAL),
++                                        TCP_RTO_MAX);
++                }
++
++                if (tcp_time_stamp - TCP_SKB_CB(skb_r)->when > inet_csk(sk)->icsk_rto) {
++                        // RTO revert clocked out retransmission.
++                        tcp_retransmit_skb(sk, skb_r);
++                        inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
++                } else {
++                        //RTO revert shortened timer.
++                        inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
++                            icsk->icsk_rto - (tcp_time_stamp - TCP_SKB_CB(skb_r)->when), TCP_RTO_MAX);
++                }
++
+ 		break;
+ 	case ICMP_TIME_EXCEEDED:
+ 		err = EHOSTUNREACH;
+diff -BNaur vanilla-2.6.28.7/net/ipv4/tcp_timer.c vanilla-2.6.28.7-icmp/net/ipv4/tcp_timer.c
+--- vanilla-2.6.28.7/net/ipv4/tcp_timer.c	2009-07-23 15:33:28.000000000 +0200
++++ vanilla-2.6.28.7-icmp/net/ipv4/tcp_timer.c	2009-07-23 15:35:29.000000000 +0200
+@@ -143,7 +143,7 @@
+ 			dst_negative_advice(&sk->sk_dst_cache);
+ 		retry_until = icsk->icsk_syn_retries ? : sysctl_tcp_syn_retries;
+ 	} else {
+-		if (icsk->icsk_retransmits >= sysctl_tcp_retries1) {
++		if (retrans_overstepped(sk, sysctl_tcp_retries1)) {
+ 			/* Black hole detection */
+ 			tcp_mtu_probing(icsk, sk);
+ 
+@@ -156,12 +156,12 @@
+ 
+ 			retry_until = tcp_orphan_retries(sk, alive);
+ 
+-			if (tcp_out_of_resources(sk, alive || icsk->icsk_retransmits < retry_until))
++			if (tcp_out_of_resources(sk, alive || !retrans_overstepped(sk, retry_until)))
+ 				return 1;
+ 		}
+ 	}
+ 
+-	if (icsk->icsk_retransmits >= retry_until) {
++	if (retrans_overstepped(sk, retry_until)) {
+ 		/* Has it gone just too far? */
+ 		tcp_write_err(sk);
+ 		return 1;
+@@ -388,7 +388,7 @@
+ out_reset_timer:
+ 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
+ 	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
+-	if (icsk->icsk_retransmits > sysctl_tcp_retries1)
++	if (retrans_overstepped(sk, sysctl_tcp_retries1))
+ 		__sk_dst_reset(sk);
+ 
+ out:;
