@@ -163,16 +163,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt);
 }
 
-
-static ssize_t tcpprobe_write(struct file *file, const char __user *buf, size_t len, loff_t *ppos)
-{
-	if (!buf || len < 0) return -EINVAL;
-	port = (int) simple_strtoul(buf, NULL, 10);
-	pr_info("TCP probe port changed (port=%d)\n", port);
-	return len;
-}
-
-static ssize_t tcpprobe_read(struct file *file, char __user *buf, size_t len, loff_t *ppos)
+static ssize_t tcpprobe_read(struct file *file, char __user *buf,
+			     size_t len, loff_t *ppos)
 {
 	int error = 0, cnt = 0;
 
@@ -220,7 +212,6 @@ static const struct file_operations tcpprobe_fops = {
 	.owner	 = THIS_MODULE,
 	.open	 = tcpprobe_open,
 	.read    = tcpprobe_read,
-	.write   = tcpprobe_write,
 };
 
 static __init int tcpprobe_init(void)
@@ -237,7 +228,7 @@ static __init int tcpprobe_init(void)
 	if (!tcp_probe.log)
 		goto err0;
 
-	if (!proc_net_fops_create(&init_net, procname, S_IRUSR | S_IROTH | S_IWUSR | S_IWOTH, &tcpprobe_fops))
+	if (!proc_net_fops_create(&init_net, procname, S_IRUSR, &tcpprobe_fops))
 		goto err0;
 
 	ret = register_jprobe(&tcp_jprobe);

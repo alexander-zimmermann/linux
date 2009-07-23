@@ -59,6 +59,7 @@
 #include <linux/jhash.h>
 #include <linux/init.h>
 #include <linux/times.h>
+#include <linux/list.h>
 
 #include <net/net_namespace.h>
 #include <net/icmp.h>
@@ -80,6 +81,9 @@
 
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
+
+#include "tcp_ipv4.h"
+//#define ICMP_SECURITY_MODE 1
 
 int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
@@ -316,6 +320,13 @@ static void do_pmtu_discovery(struct sock *sk, struct iphdr *iph, u32 mtu)
 	} /* else let the usual retransmit timer handle it */
 }
 
+
+/*
+ * Diese Liste speichert die Sequenznummern der zurueckkommenden
+ * ICMP Pakete zwischen SND.UNA und SND.NXT fuer den Security Mode
+ */
+struct list_head* icmp_list;
+
 /*
  * This routine is called by the ICMP module when it gets some
  * sort of error condition.  If err < 0 then the socket should
@@ -402,133 +413,31 @@ void tcp_v4_err(struct sk_buff *skb, u32 info)
 
 		err = icmp_err_convert[code].errno;
 
-		if (!tp->act_on_icmps) break;
-
-		printk(KERN_INFO "retransmits %d, backoff %d, rto %d\n", icsk->icsk_retransmits, icsk->icsk_backoff, icsk->icsk_rto);
-
 		/* check if ICMP unreachable messages allow revert of back-off */
-                if ((code != ICMP_NET_UNREACH && code != ICMP_HOST_UNREACH) ||
-                                !icsk->icsk_retransmits || seq != tp->snd_una) {
-                        printk(KERN_INFO "Potential revert failed due to "
-                                        "initial checks... (%d/%d/%d) [%u/%u]\n",
-                                        (code != ICMP_NET_UNREACH && code != ICMP_HOST_UNREACH),
-                                        !icsk->icsk_retransmits, seq != tp->snd_una, seq, tp->snd_una);
-                        break;
-                }
+                if ((code != ICMP_NET_UNREACH && code != ICMP_HOST_UNREACH) || seq != tp->snd_una 
+		|| !icsk->icsk_retransmits || !icsk->icsk_backoff) break;
 
-                if (icsk->icsk_retransmits == 1)
-		{
-			unsigned char *ptr = (unsigned char *)(th + 1);
-			unsigned int tsval = 0;
-			
-			if (!pskb_may_pull(skb, iph->ihl*4 + sizeof(struct tcphdr)))
-			{
-				printk(KERN_INFO "ICMP packet does not contain full TCP header in payload\n");
-				goto out;
-			}
-
-			printk(KERN_INFO "3) th->doff %u\n", th->doff);
-			unsigned int length = (th->doff * 4) - sizeof(struct tcphdr);
-			
-			if (!pskb_may_pull(skb, (iph->ihl + th->doff) * 4))
-			{
-				printk(KERN_INFO "ICMP packet does not contain TCP options in payload\n");
-				goto out;
-			};
-
-			printk(KERN_INFO "Options length %d\n", length);
-
-			while (length > 0)
-			{
-				int opcode = *ptr++;
-				printk(KERN_INFO "TCP Options Opcode %u\n", opcode);
-	
-				if (opcode == TCPOPT_EOL) break;
-				if (opcode == TCPOPT_NOP) { length--; continue; }
-				
-				int opsize = *ptr++;
-
-				printk(KERN_INFO "TCP Options Size %u\n", opsize);
-				if (opsize < 2)      break; 	/* "silly options" */
-				if (opsize > length) break;	/* don't parse partial options */
-				if (opcode == TCPOPT_TIMESTAMP && opsize == TCPOLEN_TIMESTAMP)
-				{
-						tsval = get_unaligned_be32(ptr);
-						break;
-				}
-	
-				ptr += opsize-2;
-				length -= opsize;
-			};
-				
-			if (tsval == 0)
-			{
-				printk(KERN_INFO "No timestamp in ICMP packet. Do backoff.\n");
-				goto out;
-			}
-
-			printk(KERN_INFO "lsndtime %u, icmp tsval %u", tp->lsndtime, tsval);
-			if (tp->lsndtime < tsval) // ICMP reply on original transmission
-			{
-				printk(KERN_INFO "ICMP reply on original transmission. Do backoff\n");
-				goto out;
-			}
-			
-			printk(KERN_INFO "ICMP reply on retransmission. Revert backoff\n");
-			goto revert;
-		}
-
-		revert:
-
-                /* XXX: check for local congestion and buggy routers
-                 ** conflict. Fix this up! */
-                if (icsk->icsk_retransmits == 1 && !icsk->icsk_backoff) {
-                        printk(KERN_INFO "Retransmission did not invoke "
-                                        "back-off due to local congestion.\n");
-                        break;
-                }
-
-                if (icsk->icsk_backoff == 0) {
-                        if (net_ratelimit()) {
-                                printk(KERN_INFO
-                                                "Router %u.%u.%u.%u sent "
-                                                "more ICMP messages than we "
-                                                "sent retransmissions.\n",
-                                                NIPQUAD(iph->saddr));
-                        }
-                        break;
-                }
-
-		BUG_ON(icsk->icsk_backoff == 0);
                 icsk->icsk_backoff--;
                 icsk->icsk_rto >>= 1;
-                printk(KERN_INFO "Reverting one RTO back-off, new backoff %d, new rto %d\n", icsk->icsk_backoff, icsk->icsk_rto);
-                BUG_ON(!icsk->icsk_rto);
-
 
                 skb_r = skb_peek(&sk->sk_write_queue);
                 BUG_ON(!skb_r);
 
 		if (sock_owned_by_user(sk)) {
-                        printk(KERN_INFO "Deferring retransmission "
-                                        "cloked by ICMP due to "
-                                        "locked socket.\n");
+                        // Deferring retransmission clocked by ICMP due to locked socket.
                         inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
                                         min(icsk->icsk_rto, TCP_RESOURCE_PROBE_INTERVAL),
                                         TCP_RTO_MAX);
                 }
 
-                if (tcp_time_stamp - TCP_SKB_CB(skb_r)->when >
-                                inet_csk(sk)->icsk_rto) {
-                        printk(KERN_INFO "RTO revert clocked out retransmission.\n");
+                if (tcp_time_stamp - TCP_SKB_CB(skb_r)->when > inet_csk(sk)->icsk_rto) {
+                        // RTO revert clocked out retransmission.
                         tcp_retransmit_skb(sk, skb_r);
-                        inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
-                                        icsk->icsk_rto, TCP_RTO_MAX);
+                        inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
                 } else {
-                        printk(KERN_INFO "RTO revert shortened timer.\n");
+                        //RTO revert shortened timer.
                         inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
-                                icsk->icsk_rto - (tcp_time_stamp -
-                                        TCP_SKB_CB(skb_r)->when), TCP_RTO_MAX);
+                            icsk->icsk_rto - (tcp_time_stamp - TCP_SKB_CB(skb_r)->when), TCP_RTO_MAX);
                 }
 
 		break;
@@ -1939,6 +1848,11 @@ static int tcp_v4_init_sock(struct sock *sk)
 
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
+
+#ifdef ICMP_SECURITY_MODE
+	icmp_list = kmalloc(sizeof(struct icmp_unreach_list), GFP_ATOMIC);
+	INIT_LIST_HEAD(icmp_list);
+#endif
 
 	atomic_inc(&tcp_sockets_allocated);
 

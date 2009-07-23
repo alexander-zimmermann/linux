@@ -2170,13 +2170,6 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		break;
 #endif
 
-	case TCP_ICMP:
-		if (val < 0 || val > 1)
-			err = -EINVAL;
-		else
-			tp->act_on_icmps = val;
-		break;
-
 
 	default:
 		err = -ENOPROTOOPT;
