@@ -17,6 +17,9 @@
  *  want per guest time just set the kernel.vsyscall64 sysctl to 0.
  */
 
+/* Disable profiling for userspace code: */
+#define DISABLE_BRANCH_PROFILING
+
 #include <linux/time.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -128,6 +131,7 @@ static __always_inline void do_vgettimeofday(struct timeval * tv)
 			gettimeofday(tv,NULL);
 			return;
 		}
+
 		now = vread();
 		base = __vsyscall_gtod_data.clock.cycle_last;
 		mask = __vsyscall_gtod_data.clock.mask;

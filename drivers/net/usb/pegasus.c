@@ -93,17 +93,19 @@ module_param (msg_level, int, 0);
 MODULE_PARM_DESC (msg_level, "Override default message level");
 
 MODULE_DEVICE_TABLE(usb, pegasus_ids);
+static const struct net_device_ops pegasus_netdev_ops;
 
 static int update_eth_regs_async(pegasus_t *);
 /* Aargh!!! I _really_ hate such tweaks */
 static void ctrl_callback(struct urb *urb)
 {
 	pegasus_t *pegasus = urb->context;
+	int status = urb->status;
 
 	if (!pegasus)
 		return;
 
-	switch (urb->status) {
+	switch (status) {
 	case 0:
 		if (pegasus->flags & ETH_REGS_CHANGE) {
 			pegasus->flags &= ~ETH_REGS_CHANGE;
@@ -119,7 +121,7 @@ static void ctrl_callback(struct urb *urb)
 	default:
 		if (netif_msg_drv(pegasus) && printk_ratelimit())
 			dev_dbg(&pegasus->intf->dev, "%s, status %d\n",
-				__func__, urb->status);
+				__func__, status);
 	}
 	pegasus->flags &= ~ETH_REGS_CHANGED;
 	wake_up(&pegasus->ctrl_wait);
@@ -149,8 +151,8 @@ static int get_registers(pegasus_t * pegasus, __u16 indx, __u16 size,
 	pegasus->dr.bRequestType = PEGASUS_REQT_READ;
 	pegasus->dr.bRequest = PEGASUS_REQ_GET_REGS;
 	pegasus->dr.wValue = cpu_to_le16(0);
-	pegasus->dr.wIndex = cpu_to_le16p(&indx);
-	pegasus->dr.wLength = cpu_to_le16p(&size);
+	pegasus->dr.wIndex = cpu_to_le16(indx);
+	pegasus->dr.wLength = cpu_to_le16(size);
 	pegasus->ctrl_urb->transfer_buffer_length = size;
 
 	usb_fill_control_urb(pegasus->ctrl_urb, pegasus->usb,
@@ -207,8 +209,8 @@ static int set_registers(pegasus_t * pegasus, __u16 indx, __u16 size,
 	pegasus->dr.bRequestType = PEGASUS_REQT_WRITE;
 	pegasus->dr.bRequest = PEGASUS_REQ_SET_REGS;
 	pegasus->dr.wValue = cpu_to_le16(0);
-	pegasus->dr.wIndex = cpu_to_le16p(&indx);
-	pegasus->dr.wLength = cpu_to_le16p(&size);
+	pegasus->dr.wIndex = cpu_to_le16(indx);
+	pegasus->dr.wLength = cpu_to_le16(size);
 	pegasus->ctrl_urb->transfer_buffer_length = size;
 
 	usb_fill_control_urb(pegasus->ctrl_urb, pegasus->usb,
@@ -260,7 +262,7 @@ static int set_register(pegasus_t * pegasus, __u16 indx, __u8 data)
 	pegasus->dr.bRequestType = PEGASUS_REQT_WRITE;
 	pegasus->dr.bRequest = PEGASUS_REQ_SET_REG;
 	pegasus->dr.wValue = cpu_to_le16(data);
-	pegasus->dr.wIndex = cpu_to_le16p(&indx);
+	pegasus->dr.wIndex = cpu_to_le16(indx);
 	pegasus->dr.wLength = cpu_to_le16(1);
 	pegasus->ctrl_urb->transfer_buffer_length = 1;
 
@@ -295,7 +297,7 @@ static int update_eth_regs_async(pegasus_t * pegasus)
 
 	pegasus->dr.bRequestType = PEGASUS_REQT_WRITE;
 	pegasus->dr.bRequest = PEGASUS_REQ_SET_REGS;
-	pegasus->dr.wValue = 0;
+	pegasus->dr.wValue = cpu_to_le16(0);
 	pegasus->dr.wIndex = cpu_to_le16(EthCtrl0);
 	pegasus->dr.wLength = cpu_to_le16(3);
 	pegasus->ctrl_urb->transfer_buffer_length = 3;
@@ -444,11 +446,12 @@ static int write_eprom_word(pegasus_t * pegasus, __u8 index, __u16 data)
 	int i;
 	__u8 tmp, d[4] = { 0x3f, 0, 0, EPROM_WRITE };
 	int ret;
+	__le16 le_data = cpu_to_le16(data);
 
 	set_registers(pegasus, EpromOffset, 4, d);
 	enable_eprom_write(pegasus);
 	set_register(pegasus, EpromOffset, index);
-	set_registers(pegasus, EpromData, 2, &data);
+	set_registers(pegasus, EpromData, 2, &le_data);
 	set_register(pegasus, EpromCtrl, EPROM_WRITE);
 
 	for (i = 0; i < REG_TIMEOUT; i++) {
@@ -475,7 +478,7 @@ static inline void get_node_id(pegasus_t * pegasus, __u8 * id)
 
 	for (i = 0; i < 3; i++) {
 		read_eprom_word(pegasus, i, &w16);
-		((__le16 *) id)[i] = cpu_to_le16p(&w16);
+		((__le16 *) id)[i] = cpu_to_le16(w16);
 	}
 }
 
@@ -611,6 +614,7 @@ static void read_bulk_callback(struct urb *urb)
 	pegasus_t *pegasus = urb->context;
 	struct net_device *net;
 	int rx_status, count = urb->actual_length;
+	int status = urb->status;
 	u8 *buf = urb->transfer_buffer;
 	__u16 pkt_len;
 
@@ -621,7 +625,7 @@ static void read_bulk_callback(struct urb *urb)
 	if (!netif_device_present(net) || !netif_running(net))
 		return;
 
-	switch (urb->status) {
+	switch (status) {
 	case 0:
 		break;
 	case -ETIME:
@@ -639,11 +643,11 @@ static void read_bulk_callback(struct urb *urb)
 	case -ECONNRESET:
 	case -ESHUTDOWN:
 		if (netif_msg_ifdown(pegasus))
-			pr_debug("%s: rx unlink, %d\n", net->name, urb->status);
+			pr_debug("%s: rx unlink, %d\n", net->name, status);
 		return;
 	default:
 		if (netif_msg_rx_err(pegasus))
-			pr_debug("%s: RX status %d\n", net->name, urb->status);
+			pr_debug("%s: RX status %d\n", net->name, status);
 		goto goon;
 	}
 
@@ -769,6 +773,7 @@ static void write_bulk_callback(struct urb *urb)
 {
 	pegasus_t *pegasus = urb->context;
 	struct net_device *net;
+	int status = urb->status;
 
 	if (!pegasus)
 		return;
@@ -778,7 +783,7 @@ static void write_bulk_callback(struct urb *urb)
 	if (!netif_device_present(net) || !netif_running(net))
 		return;
 
-	switch (urb->status) {
+	switch (status) {
 	case -EPIPE:
 		/* FIXME schedule_work() to clear the tx halt */
 		netif_stop_queue(net);
@@ -790,11 +795,11 @@ static void write_bulk_callback(struct urb *urb)
 	case -ECONNRESET:
 	case -ESHUTDOWN:
 		if (netif_msg_ifdown(pegasus))
-			pr_debug("%s: tx unlink, %d\n", net->name, urb->status);
+			pr_debug("%s: tx unlink, %d\n", net->name, status);
 		return;
 	default:
 		if (netif_msg_tx_err(pegasus))
-			pr_info("%s: TX status %d\n", net->name, urb->status);
+			pr_info("%s: TX status %d\n", net->name, status);
 		/* FALL THROUGH */
 	case 0:
 		break;
@@ -808,13 +813,13 @@ static void intr_callback(struct urb *urb)
 {
 	pegasus_t *pegasus = urb->context;
 	struct net_device *net;
-	int status;
+	int res, status = urb->status;
 
 	if (!pegasus)
 		return;
 	net = pegasus->net;
 
-	switch (urb->status) {
+	switch (status) {
 	case 0:
 		break;
 	case -ECONNRESET:	/* unlink */
@@ -827,7 +832,7 @@ static void intr_callback(struct urb *urb)
 		 */
 		if (netif_msg_timer(pegasus))
 			pr_debug("%s: intr status %d\n", net->name,
-					urb->status);
+					status);
 	}
 
 	if (urb->actual_length >= 6) {
@@ -854,12 +859,12 @@ static void intr_callback(struct urb *urb)
 		pegasus->stats.rx_missed_errors += ((d[3] & 0x7f) << 8) | d[4];
 	}
 
-	status = usb_submit_urb(urb, GFP_ATOMIC);
-	if (status == -ENODEV)
+	res = usb_submit_urb(urb, GFP_ATOMIC);
+	if (res == -ENODEV)
 		netif_device_detach(pegasus->net);
-	if (status && netif_msg_timer(pegasus))
+	if (res && netif_msg_timer(pegasus))
 		printk(KERN_ERR "%s: can't resubmit interrupt urb, %d\n",
-				net->name, status);
+				net->name, res);
 }
 
 static void pegasus_tx_timeout(struct net_device *net)
@@ -895,6 +900,7 @@ static int pegasus_start_xmit(struct sk_buff *skb, struct net_device *net)
 			/* cleanup should already have been scheduled */
 			break;
 		case -ENODEV:		/* disconnect() upcoming */
+		case -EPERM:
 			netif_device_detach(pegasus->net);
 			break;
 		default:
@@ -918,29 +924,32 @@ static struct net_device_stats *pegasus_netdev_stats(struct net_device *dev)
 
 static inline void disable_net_traffic(pegasus_t * pegasus)
 {
-	int tmp = 0;
+	__le16 tmp = cpu_to_le16(0);
 
-	set_registers(pegasus, EthCtrl0, 2, &tmp);
+	set_registers(pegasus, EthCtrl0, sizeof(tmp), &tmp);
 }
 
 static inline void get_interrupt_interval(pegasus_t * pegasus)
 {
-	__u8 data[2];
+	u16 data;
+	u8 interval;
 
-	read_eprom_word(pegasus, 4, (__u16 *) data);
+	read_eprom_word(pegasus, 4, &data);
+	interval = data >> 8;
 	if (pegasus->usb->speed != USB_SPEED_HIGH) {
-		if (data[1] < 0x80) {
+		if (interval < 0x80) {
 			if (netif_msg_timer(pegasus))
 				dev_info(&pegasus->intf->dev, "intr interval "
 					"changed from %ums to %ums\n",
-					data[1], 0x80);
-			data[1] = 0x80;
+					interval, 0x80);
+			interval = 0x80;
+			data = (data & 0x00FF) | ((u16)interval << 8);
 #ifdef PEGASUS_WRITE_EEPROM
-			write_eprom_word(pegasus, 4, *(__u16 *) data);
+			write_eprom_word(pegasus, 4, data);
 #endif
 		}
 	}
-	pegasus->intr_interval = data[1];
+	pegasus->intr_interval = interval;
 }
 
 static void set_carrier(struct net_device *net)
@@ -1213,7 +1222,7 @@ static void pegasus_set_multicast(struct net_device *net)
 		pegasus->eth_regs[EthCtrl0] |= RX_MULTICAST;
 		pegasus->eth_regs[EthCtrl2] &= ~RX_PROMISCUOUS;
 		if (netif_msg_link(pegasus))
-			pr_info("%s: set allmulti\n", net->name);
+			pr_debug("%s: set allmulti\n", net->name);
 	} else {
 		pegasus->eth_regs[EthCtrl0] &= ~RX_MULTICAST;
 		pegasus->eth_regs[EthCtrl2] &= ~RX_PROMISCUOUS;
@@ -1273,6 +1282,7 @@ static inline void setup_pegasus_II(pegasus_t * pegasus)
 }
 
 
+static int pegasus_count;
 static struct workqueue_struct *pegasus_workqueue = NULL;
 #define CARRIER_CHECK_DELAY (2 * HZ)
 
@@ -1293,12 +1303,25 @@ static int pegasus_blacklisted(struct usb_device *udev)
 	/* Special quirk to keep the driver from handling the Belkin Bluetooth
 	 * dongle which happens to have the same ID.
 	 */
-	if ((udd->idVendor == VENDOR_BELKIN && udd->idProduct == 0x0121) &&
+	if ((udd->idVendor == cpu_to_le16(VENDOR_BELKIN)) &&
+	    (udd->idProduct == cpu_to_le16(0x0121)) &&
 	    (udd->bDeviceClass == USB_CLASS_WIRELESS_CONTROLLER) &&
 	    (udd->bDeviceProtocol == 1))
 		return 1;
 
 	return 0;
+}
+
+/* we rely on probe() and remove() being serialized so we
+ * don't need extra locking on pegasus_count.
+ */
+static void pegasus_dec_workqueue(void)
+{
+	pegasus_count--;
+	if (pegasus_count == 0) {
+		destroy_workqueue(pegasus_workqueue);
+		pegasus_workqueue = NULL;
+	}
 }
 
 static int pegasus_probe(struct usb_interface *intf,
@@ -1309,14 +1332,18 @@ static int pegasus_probe(struct usb_interface *intf,
 	pegasus_t *pegasus;
 	int dev_index = id - pegasus_ids;
 	int res = -ENOMEM;
-	DECLARE_MAC_BUF(mac);
+
+	if (pegasus_blacklisted(dev))
+		return -ENODEV;
+
+	if (pegasus_count == 0) {
+		pegasus_workqueue = create_singlethread_workqueue("pegasus");
+		if (!pegasus_workqueue)
+			return -ENOMEM;
+	}
+	pegasus_count++;
 
 	usb_get_dev(dev);
-
-	if (pegasus_blacklisted(dev)) {
-		res = -ENODEV;
-		goto out;
-	}
 
 	net = alloc_etherdev(sizeof(struct pegasus));
 	if (!net) {
@@ -1340,14 +1367,10 @@ static int pegasus_probe(struct usb_interface *intf,
 	pegasus->intf = intf;
 	pegasus->usb = dev;
 	pegasus->net = net;
-	net->open = pegasus_open;
-	net->stop = pegasus_close;
+
+
 	net->watchdog_timeo = PEGASUS_TX_TIMEOUT;
-	net->tx_timeout = pegasus_tx_timeout;
-	net->do_ioctl = pegasus_ioctl;
-	net->hard_start_xmit = pegasus_start_xmit;
-	net->set_multicast_list = pegasus_set_multicast;
-	net->get_stats = pegasus_netdev_stats;
+	net->netdev_ops = &pegasus_netdev_ops;
 	SET_ETHTOOL_OPS(net, &ops);
 	pegasus->mii.dev = net;
 	pegasus->mii.mdio_read = mdio_read;
@@ -1386,10 +1409,10 @@ static int pegasus_probe(struct usb_interface *intf,
 	queue_delayed_work(pegasus_workqueue, &pegasus->carrier_check,
 				CARRIER_CHECK_DELAY);
 
-	dev_info(&intf->dev, "%s, %s, %s\n",
+	dev_info(&intf->dev, "%s, %s, %pM\n",
 		 net->name,
 		 usb_dev_id[dev_index].name,
-		 print_mac(mac, net->dev_addr));
+		 net->dev_addr);
 	return 0;
 
 out3:
@@ -1401,6 +1424,7 @@ out1:
 	free_netdev(net);
 out:
 	usb_put_dev(dev);
+	pegasus_dec_workqueue();
 	return res;
 }
 
@@ -1426,6 +1450,7 @@ static void pegasus_disconnect(struct usb_interface *intf)
 		pegasus->rx_skb = NULL;
 	}
 	free_netdev(pegasus->net);
+	pegasus_dec_workqueue();
 }
 
 static int pegasus_suspend (struct usb_interface *intf, pm_message_t message)
@@ -1460,6 +1485,19 @@ static int pegasus_resume (struct usb_interface *intf)
 	return 0;
 }
 
+static const struct net_device_ops pegasus_netdev_ops = {
+	.ndo_open =			pegasus_open,
+	.ndo_stop =			pegasus_close,
+	.ndo_do_ioctl =			pegasus_ioctl,
+	.ndo_start_xmit =		pegasus_start_xmit,
+	.ndo_set_multicast_list =	pegasus_set_multicast,
+	.ndo_get_stats =		pegasus_netdev_stats,
+	.ndo_tx_timeout =		pegasus_tx_timeout,
+	.ndo_change_mtu =		eth_change_mtu,
+	.ndo_set_mac_address =		eth_mac_addr,
+	.ndo_validate_addr =		eth_validate_addr,
+};
+
 static struct usb_driver pegasus_driver = {
 	.name = driver_name,
 	.probe = pegasus_probe,
@@ -1469,7 +1507,7 @@ static struct usb_driver pegasus_driver = {
 	.resume = pegasus_resume,
 };
 
-static void parse_id(char *id)
+static void __init parse_id(char *id)
 {
 	unsigned int vendor_id=0, device_id=0, flags=0, i=0;
 	char *token, *name=NULL;
@@ -1505,15 +1543,11 @@ static int __init pegasus_init(void)
 	pr_info("%s: %s, " DRIVER_DESC "\n", driver_name, DRIVER_VERSION);
 	if (devid)
 		parse_id(devid);
-	pegasus_workqueue = create_singlethread_workqueue("pegasus");
-	if (!pegasus_workqueue)
-		return -ENOMEM;
 	return usb_register(&pegasus_driver);
 }
 
 static void __exit pegasus_exit(void)
 {
-	destroy_workqueue(pegasus_workqueue);
 	usb_deregister(&pegasus_driver);
 }
 

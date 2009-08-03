@@ -34,7 +34,7 @@ static struct mode_info cga_modes[] = {
 	{ VIDEO_80x25,  80, 25, 0 },
 };
 
-__videocard video_vga;
+static __videocard video_vga;
 
 /* Set basic 80x25 mode */
 static u8 vga_set_basic_mode(void)
@@ -45,8 +45,10 @@ static u8 vga_set_basic_mode(void)
 
 #ifdef CONFIG_VIDEO_400_HACK
 	if (adapter >= ADAPTER_VGA) {
+		ax = 0x1202;
 		asm volatile(INT10
-			     : : "a" (0x1202), "b" (0x0030)
+			     : "+a" (ax)
+			     : "b" (0x0030)
 			     : "ecx", "edx", "esi", "edi");
 	}
 #endif
@@ -81,44 +83,59 @@ static u8 vga_set_basic_mode(void)
 
 static void vga_set_8font(void)
 {
+	u16 ax;
+
 	/* Set 8x8 font - 80x43 on EGA, 80x50 on VGA */
 
 	/* Set 8x8 font */
-	asm volatile(INT10 : : "a" (0x1112), "b" (0));
+	ax = 0x1112;
+	asm volatile(INT10 : "+a" (ax) : "b" (0));
 
 	/* Use alternate print screen */
-	asm volatile(INT10 : : "a" (0x1200), "b" (0x20));
+	ax = 0x1200;
+	asm volatile(INT10 : "+a" (ax) : "b" (0x20));
 
 	/* Turn off cursor emulation */
-	asm volatile(INT10 : : "a" (0x1201), "b" (0x34));
+	ax = 0x1201;
+	asm volatile(INT10 : "+a" (ax) : "b" (0x34));
 
 	/* Cursor is scan lines 6-7 */
-	asm volatile(INT10 : : "a" (0x0100), "c" (0x0607));
+	ax = 0x0100;
+	asm volatile(INT10 : "+a" (ax) : "c" (0x0607));
 }
 
 static void vga_set_14font(void)
 {
+	u16 ax;
+
 	/* Set 9x14 font - 80x28 on VGA */
 
 	/* Set 9x14 font */
-	asm volatile(INT10 : : "a" (0x1111), "b" (0));
+	ax = 0x1111;
+	asm volatile(INT10 : "+a" (ax) : "b" (0));
 
 	/* Turn off cursor emulation */
-	asm volatile(INT10 : : "a" (0x1201), "b" (0x34));
+	ax = 0x1201;
+	asm volatile(INT10 : "+a" (ax) : "b" (0x34));
 
 	/* Cursor is scan lines 11-12 */
-	asm volatile(INT10 : : "a" (0x0100), "c" (0x0b0c));
+	ax = 0x0100;
+	asm volatile(INT10 : "+a" (ax) : "c" (0x0b0c));
 }
 
 static void vga_set_80x43(void)
 {
+	u16 ax;
+
 	/* Set 80x43 mode on VGA (not EGA) */
 
 	/* Set 350 scans */
-	asm volatile(INT10 : : "a" (0x1201), "b" (0x30));
+	ax = 0x1201;
+	asm volatile(INT10 : "+a" (ax) : "b" (0x30));
 
 	/* Reset video mode */
-	asm volatile(INT10 : : "a" (0x0003));
+	ax = 0x0003;
+	asm volatile(INT10 : "+a" (ax));
 
 	vga_set_8font();
 }
@@ -129,10 +146,10 @@ u16 vga_crtc(void)
 	return (inb(0x3cc) & 1) ? 0x3d4 : 0x3b4;
 }
 
-static void vga_set_480_scanlines(int end)
+static void vga_set_480_scanlines(void)
 {
-	u16 crtc;
-	u8  csel;
+	u16 crtc;		/* CRTC base address */
+	u8  csel;		/* CRTC miscellaneous output register */
 
 	crtc = vga_crtc();
 
@@ -140,30 +157,47 @@ static void vga_set_480_scanlines(int end)
 	out_idx(0x0b, crtc, 0x06); /* Vertical total */
 	out_idx(0x3e, crtc, 0x07); /* Vertical overflow */
 	out_idx(0xea, crtc, 0x10); /* Vertical sync start */
-	out_idx(end, crtc, 0x12); /* Vertical display end */
+	out_idx(0xdf, crtc, 0x12); /* Vertical display end */
 	out_idx(0xe7, crtc, 0x15); /* Vertical blank start */
 	out_idx(0x04, crtc, 0x16); /* Vertical blank end */
 	csel = inb(0x3cc);
 	csel &= 0x0d;
 	csel |= 0xe2;
-	outb(csel, 0x3cc);
+	outb(csel, 0x3c2);
+}
+
+static void vga_set_vertical_end(int lines)
+{
+	u16 crtc;		/* CRTC base address */
+	u8  ovfw;		/* CRTC overflow register */
+	int end = lines-1;
+
+	crtc = vga_crtc();
+
+	ovfw = 0x3c | ((end >> (8-1)) & 0x02) | ((end >> (9-6)) & 0x40);
+
+	out_idx(ovfw, crtc, 0x07); /* Vertical overflow */
+	out_idx(end,  crtc, 0x12); /* Vertical display end */
 }
 
 static void vga_set_80x30(void)
 {
-	vga_set_480_scanlines(0xdf);
+	vga_set_480_scanlines();
+	vga_set_vertical_end(30*16);
 }
 
 static void vga_set_80x34(void)
 {
+	vga_set_480_scanlines();
 	vga_set_14font();
-	vga_set_480_scanlines(0xdb);
+	vga_set_vertical_end(34*14);
 }
 
 static void vga_set_80x60(void)
 {
+	vga_set_480_scanlines();
 	vga_set_8font();
-	vga_set_480_scanlines(0xdf);
+	vga_set_vertical_end(60*8);
 }
 
 static int vga_set_mode(struct mode_info *mode)
@@ -208,7 +242,7 @@ static int vga_set_mode(struct mode_info *mode)
  */
 static int vga_probe(void)
 {
-	u16 ega_bx;
+	u16 ax, ega_bx;
 
 	static const char *card_name[] = {
 		"CGA/MDA/HGC", "EGA", "VGA"
@@ -225,9 +259,10 @@ static int vga_probe(void)
 	};
 	u8 vga_flag;
 
+	ax = 0x1200;
 	asm(INT10
-	    : "=b" (ega_bx)
-	    : "a" (0x1200), "b" (0x10) /* Check EGA/VGA */
+	    : "+a" (ax), "=b" (ega_bx)
+	    : "b" (0x10) /* Check EGA/VGA */
 	    : "ecx", "edx", "esi", "edi");
 
 #ifndef _WAKEUP
@@ -259,7 +294,7 @@ static int vga_probe(void)
 	return mode_count[adapter];
 }
 
-__videocard video_vga = {
+static __videocard video_vga = {
 	.card_name	= "VGA",
 	.probe		= vga_probe,
 	.set_mode	= vga_set_mode,
