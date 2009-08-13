@@ -1003,6 +1003,49 @@ static void tcp_skb_mark_lost_uncond_verify(struct tcp_sock *tp,
 	}
 }
 
+/* TCP-NCR: Test if TCP-NCR may be used
+ * (Following RFC 4653 recommendations)
+ */
+static int tcp_ncr_test(struct tcp_sock *tp)
+{
+	return tp->tcp_ncr_flag && tcp_is_sack(tp)
+		&& !(tp->nonagle & TCP_NAGLE_OFF);
+}
+
+/* TCP-NCR: Initiate Extended Limited Transmit
+ * (RFC 4653 Initialization)
+ */
+static void tcp_ncr_elt_init(struct tcp_sock *tp, int how)
+{
+	if (!how)
+		tp->priorFlightSize = tp->packets_out;
+	tp->elt_flag = 1;
+	tp->dupthresh = max_t(u32, ((2 * tp->packets_out)/tp->LT_F), 3);
+}
+
+/* TCP-NCR Extended Limited Transmit
+ * (RFC 4653 Termination)
+ */
+static void tcp_ncr_elt_end(struct tcp_sock *tp, int flag , int how)
+{
+	if (how) {
+		/* New cumulative ACK during ELT, it is reordering. */
+		tp->snd_ssthresh = tp->priorFlightSize;
+		tp->snd_cwnd = min(tp->packets_out+1, tp->priorFlightSize);
+		tp->snd_cwnd_stamp = tcp_time_stamp;
+		if (flag & FLAG_DATA_SACKED)
+			tcp_ncr_elt_init(tp, 1);
+		else
+			tp->elt_flag = 0;
+	} else {
+		/* Dupthresh is reached, start recovery */
+		tp->snd_ssthresh = (tp->priorFlightSize/2);
+		tp->snd_cwnd = tp->snd_ssthresh;
+		tp->snd_cwnd_stamp = tcp_time_stamp;
+		tp->elt_flag = 0;
+	}
+}
+
 /* This procedure tags the retransmission queue when SACKs arrive.
  *
  * We have three tag bits: SACKED(S), RETRANS(R) and LOST(L).
@@ -1345,6 +1388,10 @@ static u8 tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 				tp->lost_out -= pcount;
 			}
 		}
+
+		/* TCP-NCR: Initialization */
+		if (tcp_ncr_test(tp) && (!tp->elt_flag) && (tp->sacked_out == 0))
+			tcp_ncr_elt_init(tp, 0);
 
 		sacked |= TCPCB_SACKED_ACKED;
 		state->flag |= FLAG_DATA_SACKED;
@@ -2425,8 +2472,12 @@ static int tcp_time_to_recover(struct sock *sk)
 	if (tp->lost_out)
 		return 1;
 
-	/* Not-A-Trick#2 : Classic rule... */
-	if (tcp_dupack_heurestics(tp) > tp->reordering)
+	/* Not-A-Trick#2 : Classic rule...
+	 * * (Option to use TCP-NCR dupthresh instead)
+	 */
+	if (tp->elt_flag && (tcp_dupack_heurestics(tp) > tp->dupthresh))
+		return 1;
+	if (!tp->elt_flag && (tcp_dupack_heurestics(tp) > tp->reordering))
 		return 1;
 
 	/* Trick#3 : when we use RFC2988 timer restart, fast
@@ -2601,6 +2652,18 @@ static void tcp_cwnd_down(struct sock *sk, int flag)
 		tp->snd_cwnd = min(tp->snd_cwnd, tcp_packets_in_flight(tp) + 1);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
+}
+
+/* TCP-NCR: Extended Limited Transmit
+ * (RFC 4653 Main Part)
+ */
+static void tcp_ncr_elt(struct sock *sk, int flag)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (tp->LT_F == 3)
+		tcp_cwnd_down(sk, flag);
+	tp->dupthresh = max_t(u32, ((2 * tp->packets_out)/tp->LT_F), 3);
 }
 
 /* Nothing was retransmitted or returned timestamp is less
@@ -2812,7 +2875,8 @@ static void tcp_try_to_open(struct sock *sk, int flag)
 
 	if (inet_csk(sk)->icsk_ca_state != TCP_CA_CWR) {
 		tcp_try_keep_open(sk);
-		tcp_moderate_cwnd(tp);
+		if (!tcp_ncr_test(tp))
+			tcp_moderate_cwnd(tp);
 	} else {
 		tcp_cwnd_down(sk, flag);
 	}
@@ -2919,6 +2983,10 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		tp->sacked_out = 0;
 	if (WARN_ON(!tp->sacked_out && tp->fackets_out))
 		tp->fackets_out = 0;
+
+	/* TCP-NCR: Extended Limited Transmit */
+	if (tp->elt_flag && (flag & FLAG_DATA_SACKED))
+		tcp_ncr_elt(sk, flag);
 
 	/* Now state machine starts.
 	 * A. ECE, hence prohibit cwnd undoing, the reduction is required. */
@@ -3050,7 +3118,10 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		if (icsk->icsk_ca_state < TCP_CA_CWR) {
 			if (!(flag & FLAG_ECE))
 				tp->prior_ssthresh = tcp_current_ssthresh(sk);
-			tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
+			if (tp->elt_flag)
+				tcp_ncr_elt_end(tp, flag, 0);
+			else
+				tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 			TCP_ECN_queue_cwr(tp);
 		}
 
@@ -3062,7 +3133,8 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 
 	if (do_lost || (tcp_is_fack(tp) && tcp_head_timedout(sk)))
 		tcp_update_scoreboard(sk, fast_rexmit);
-	tcp_cwnd_down(sk, flag);
+	if (!tcp_ncr_test(tp))
+		tcp_cwnd_down(sk, flag);
 	tcp_xmit_retransmit_queue(sk);
 }
 
@@ -3285,8 +3357,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			int delta;
 
 			/* Non-retransmitted hole got filled? That's reordering */
-			if (reord < prior_fackets)
+			if (reord < prior_fackets) {
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
+				if (tp->elt_flag)
+					tcp_ncr_elt_end(tp, flag, 1);
+			}
 
 			delta = tcp_is_fack(tp) ? pkts_acked :
 						  prior_sacked - tp->sacked_out;

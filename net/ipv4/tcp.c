@@ -2208,6 +2208,20 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		break;
 #endif
 
+	case TCP_NCR:
+		/* TCP-NCR:
+		 * val equal 1 for careful mode
+		 * val equal 2 for aggressive mode */
+		if (val) {
+			tp->tcp_ncr_flag = 1;
+			if (val == 1)
+				tp->LT_F = 3;
+			if (val == 2)
+				tp->LT_F = 4;
+		} else
+			tp->tcp_ncr_flag = 0;
+		break;
+
 	default:
 		err = -ENOPROTOOPT;
 		break;

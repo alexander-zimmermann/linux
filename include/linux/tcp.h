@@ -96,6 +96,7 @@ enum {
 #define TCP_QUICKACK		12	/* Block/reenable quick acks */
 #define TCP_CONGESTION		13	/* Congestion control algorithm */
 #define TCP_MD5SIG		14	/* TCP MD5 Signature (RFC2385) */
+#define TCP_NCR			23	/* TCP NCR (RFC4653) */
 
 #define TCPI_OPT_TIMESTAMPS	1
 #define TCPI_OPT_SACK		2
@@ -408,6 +409,13 @@ struct tcp_sock {
 #endif
 
 	int			linger2;
+
+/* TCP NCR extension information */
+	u8  tcp_ncr_flag;
+	u8  elt_flag;
+	u8  dupthresh;
+	u8  LT_F;
+	u32 priorFlightSize;
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)

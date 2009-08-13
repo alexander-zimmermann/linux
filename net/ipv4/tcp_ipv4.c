@@ -1774,6 +1774,11 @@ static int tcp_v4_init_sock(struct sock *sk)
 	tp->mss_cache = 536;
 
 	tp->reordering = sysctl_tcp_reordering;
+
+	/* TCP-NCR: Initiate some variables */
+	tp->dupthresh = TCP_FASTRETRANS_THRESH;
+	tp->elt_flag = 0;
+
 	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
 
 	sk->sk_state = TCP_CLOSE;
