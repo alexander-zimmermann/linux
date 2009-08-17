@@ -236,7 +236,7 @@ struct mm_struct *mm_for_maps(struct task_struct *task)
 {
 	struct mm_struct *mm;
 
-	if (mutex_lock_killable(&task->cred_exec_mutex))
+	if (mutex_lock_killable(&task->cred_guard_mutex))
 		return NULL;
 
 	mm = get_task_mm(task);
@@ -245,7 +245,7 @@ struct mm_struct *mm_for_maps(struct task_struct *task)
 		mmput(mm);
 		mm = NULL;
 	}
-	mutex_unlock(&task->cred_exec_mutex);
+	mutex_unlock(&task->cred_guard_mutex);
 
 	return mm;
 }
@@ -1003,7 +1003,12 @@ static ssize_t oom_adjust_read(struct file *file, char __user *buf,
 
 	if (!task)
 		return -ESRCH;
-	oom_adjust = task->oomkilladj;
+	task_lock(task);
+	if (task->mm)
+		oom_adjust = task->mm->oom_adj;
+	else
+		oom_adjust = OOM_DISABLE;
+	task_unlock(task);
 	put_task_struct(task);
 
 	len = snprintf(buffer, sizeof(buffer), "%i\n", oom_adjust);
@@ -1032,11 +1037,19 @@ static ssize_t oom_adjust_write(struct file *file, const char __user *buf,
 	task = get_proc_task(file->f_path.dentry->d_inode);
 	if (!task)
 		return -ESRCH;
-	if (oom_adjust < task->oomkilladj && !capable(CAP_SYS_RESOURCE)) {
+	task_lock(task);
+	if (!task->mm) {
+		task_unlock(task);
+		put_task_struct(task);
+		return -EINVAL;
+	}
+	if (oom_adjust < task->mm->oom_adj && !capable(CAP_SYS_RESOURCE)) {
+		task_unlock(task);
 		put_task_struct(task);
 		return -EACCES;
 	}
-	task->oomkilladj = oom_adjust;
+	task->mm->oom_adj = oom_adjust;
+	task_unlock(task);
 	put_task_struct(task);
 	if (end - buffer == 0)
 		return -EIO;
@@ -2125,9 +2138,15 @@ static ssize_t proc_pid_attr_write(struct file * file, const char __user * buf,
 	if (copy_from_user(page, buf, count))
 		goto out_free;
 
+	/* Guard against adverse ptrace interaction */
+	length = mutex_lock_interruptible(&task->cred_guard_mutex);
+	if (length < 0)
+		goto out_free;
+
 	length = security_setprocattr(task,
 				      (char*)file->f_path.dentry->d_name.name,
 				      (void*)page, count);
+	mutex_unlock(&task->cred_guard_mutex);
 out_free:
 	free_page((unsigned long) page);
 out:
