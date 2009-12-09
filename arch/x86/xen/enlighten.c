@@ -178,6 +178,7 @@ static __read_mostly unsigned int cpuid_leaf1_ecx_mask = ~0;
 static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 		      unsigned int *cx, unsigned int *dx)
 {
+	unsigned maskebx = ~0;
 	unsigned maskecx = ~0;
 	unsigned maskedx = ~0;
 
@@ -185,9 +186,16 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 	 * Mask out inconvenient features, to try and disable as many
 	 * unsupported kernel subsystems as possible.
 	 */
-	if (*ax == 1) {
+	switch (*ax) {
+	case 1:
 		maskecx = cpuid_leaf1_ecx_mask;
 		maskedx = cpuid_leaf1_edx_mask;
+		break;
+
+	case 0xb:
+		/* Suppress extended topology stuff */
+		maskebx = 0;
+		break;
 	}
 
 	asm(XEN_EMULATE_PREFIX "cpuid"
@@ -197,6 +205,7 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 		  "=d" (*dx)
 		: "0" (*ax), "2" (*cx));
 
+	*bx &= maskebx;
 	*cx &= maskecx;
 	*dx &= maskedx;
 }
@@ -786,7 +795,7 @@ static int xen_write_msr_safe(unsigned int msr, unsigned low, unsigned high)
 	set:
 		base = ((u64)high << 32) | low;
 		if (HYPERVISOR_set_segment_base(which, base) != 0)
-			ret = -EFAULT;
+			ret = -EIO;
 		break;
 #endif
 
@@ -912,19 +921,9 @@ static const struct pv_info xen_info __initdata = {
 
 static const struct pv_init_ops xen_init_ops __initdata = {
 	.patch = xen_patch,
-
-	.banner = xen_banner,
-	.memory_setup = xen_memory_setup,
-	.arch_setup = xen_arch_setup,
-	.post_allocator_init = xen_post_allocator_init,
 };
 
 static const struct pv_time_ops xen_time_ops __initdata = {
-	.time_init = xen_time_init,
-
-	.set_wallclock = xen_set_wallclock,
-	.get_wallclock = xen_get_wallclock,
-	.get_tsc_khz = xen_tsc_khz,
 	.sched_clock = xen_sched_clock,
 };
 
@@ -990,8 +989,6 @@ static const struct pv_cpu_ops xen_cpu_ops __initdata = {
 
 static const struct pv_apic_ops xen_apic_ops __initdata = {
 #ifdef CONFIG_X86_LOCAL_APIC
-	.setup_boot_clock = paravirt_nop,
-	.setup_secondary_clock = paravirt_nop,
 	.startup_ipi_hook = paravirt_nop,
 #endif
 };
@@ -1070,11 +1067,24 @@ asmlinkage void __init xen_start_kernel(void)
 	pv_time_ops = xen_time_ops;
 	pv_cpu_ops = xen_cpu_ops;
 	pv_apic_ops = xen_apic_ops;
-	pv_mmu_ops = xen_mmu_ops;
+
+	x86_init.resources.memory_setup = xen_memory_setup;
+	x86_init.oem.arch_setup = xen_arch_setup;
+	x86_init.oem.banner = xen_banner;
+
+	x86_init.timers.timer_init = xen_time_init;
+	x86_init.timers.setup_percpu_clockev = x86_init_noop;
+	x86_cpuinit.setup_percpu_clockev = x86_init_noop;
+
+	x86_platform.calibrate_tsc = xen_tsc_khz;
+	x86_platform.get_wallclock = xen_get_wallclock;
+	x86_platform.set_wallclock = xen_set_wallclock;
 
 	/*
 	 * Set up some pagetable state before starting to set any ptes.
 	 */
+
+	xen_init_mmu_ops();
 
 	/* Prevent unwanted bits from being set in PTEs. */
 	__supported_pte_mask &= ~_PAGE_GLOBAL;
