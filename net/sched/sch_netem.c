@@ -55,6 +55,8 @@ struct netem_sched_data {
 	psched_tdiff_t latency;
 	psched_tdiff_t jitter;
 
+        psched_time_t oldest;
+
 	u32 loss;
 	u32 limit;
 	u32 counter;
@@ -62,6 +64,7 @@ struct netem_sched_data {
 	u32 duplicate;
 	u32 reorder;
 	u32 corrupt;
+	u32 reorderdelay;
 
 	struct crndstate {
 		u32 last;
@@ -157,10 +160,19 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* We don't fill cb now as skb_unshare() may invalidate it */
 	struct netem_skb_cb *cb;
 	struct sk_buff *skb2;
+	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
+	struct sk_buff_head *listhead = &sch->q;
+	
+        psched_tdiff_t delay;
+	psched_time_t tnext;
+	
+	delay = tabledist(q->latency, q->jitter,
+                         &q->delay_cor, q->delay_dist);
 
 	pr_debug("netem_enqueue skb=%p\n", skb);
+
 
 	/* Random duplication */
 	if (q->duplicate && q->duplicate >= get_crandom(&q->dup_cor))
@@ -199,9 +211,9 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	 * do it now in software before we mangle it.
 	 */
 	if (q->corrupt && q->corrupt >= get_crandom(&q->corrupt_cor)) {
-		if (!(skb = skb_unshare(skb, GFP_ATOMIC))
-		    || (skb->ip_summed == CHECKSUM_PARTIAL
-			&& skb_checksum_help(skb))) {
+		if (!(skb = skb_unshare(skb, GFP_ATOMIC)) ||
+		    (skb->ip_summed == CHECKSUM_PARTIAL &&
+		     skb_checksum_help(skb))) {
 			sch->qstats.drops++;
 			return NET_XMIT_DROP;
 		}
@@ -210,37 +222,47 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	}
 
 	cb = netem_skb_cb(skb);
-	if (q->gap == 0 		/* not doing reordering */
-	    || q->counter < q->gap 	/* inside last reordering gap */
-	    || q->reorder < get_crandom(&q->reorder_cor)) {
-		psched_time_t now;
-		psched_tdiff_t delay;
+	if (q->gap == 0 || 		/* not doing reordering */
+	    q->counter < q->gap || 	/* inside last reordering gap */
+	    q->reorder < get_crandom(&q->reorder_cor)) {
 
-		delay = tabledist(q->latency, q->jitter,
-				  &q->delay_cor, q->delay_dist);
-
-		now = psched_get_time();
-		cb->time_to_send = now + delay;
+		/* no reordering */
+		cb->time_to_send = psched_get_time()+delay;
 		++q->counter;
-		ret = qdisc_enqueue(skb, q->qdisc);
+
 	} else {
 		/*
-		 * Do re-ordering by putting one out of N packets at the front
-		 * of the queue.
+		 * Do re-ordering by delaying one in Nth packets (insert it 
+		 * at right position in fifo queue)
 		 */
-		cb->time_to_send = psched_get_time();
-		q->counter = 0;
 
-		__skb_queue_head(&q->qdisc->q, skb);
-		q->qdisc->qstats.backlog += qdisc_pkt_len(skb);
-		q->qdisc->qstats.requeues++;
-		ret = NET_XMIT_SUCCESS;
+		cb->time_to_send = psched_get_time()+q->reorderdelay;
+		q->counter = 0;
+	}
+
+	tnext = cb->time_to_send;
+
+	/* Optimize for add at tail */
+	if (likely(skb_queue_empty(listhead) || tnext >= q->oldest)) {
+		q->oldest = tnext;
+		ret = qdisc_enqueue(skb, q->qdisc);
+        } else {
+
+		skb_queue_reverse_walk(listhead, skb3) {
+			const struct netem_skb_cb *cb_iterator = netem_skb_cb(skb3);
+			if (tnext >= cb_iterator->time_to_send) break;
+		}
+        
+	__skb_queue_after(listhead, skb3, skb);
+	ret = NET_XMIT_SUCCESS;
 	}
 
 	if (likely(ret == NET_XMIT_SUCCESS)) {
+		sch->qstats.backlog += qdisc_pkt_len(skb);
 		sch->q.qlen++;
 		sch->bstats.bytes += qdisc_pkt_len(skb);
 		sch->bstats.packets++;
+		qdisc_watchdog_schedule(&q->watchdog, tnext);
 	} else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
 	}
@@ -418,6 +440,7 @@ static int netem_change(struct Qdisc *sch, struct nlattr *opt)
 	q->counter = 0;
 	q->loss = qopt->loss;
 	q->duplicate = qopt->duplicate;
+	q->reorderdelay = qopt->reorderdelay;
 
 	/* for compatibility with earlier versions.
 	 * if gap is set, need to assume 100% probability
@@ -544,7 +567,7 @@ static int netem_init(struct Qdisc *sch, struct nlattr *opt)
 		pr_debug("netem: qdisc create failed\n");
 		return -ENOMEM;
 	}
-
+	q->oldest = PSCHED_PASTPERFECT;
 	ret = netem_change(sch, opt);
 	if (ret) {
 		pr_debug("netem: change failed\n");
@@ -578,6 +601,8 @@ static int netem_dump(struct Qdisc *sch, struct sk_buff *skb)
 	qopt.loss = q->loss;
 	qopt.gap = q->gap;
 	qopt.duplicate = q->duplicate;
+	qopt.reorderdelay = q->reorderdelay;
+	
 	NLA_PUT(skb, TCA_OPTIONS, sizeof(qopt), &qopt);
 
 	cor.delay_corr = q->delay_cor.rho;
