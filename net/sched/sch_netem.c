@@ -163,7 +163,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
-	struct sk_buff_head *listhead = &sch->q;
+	struct sk_buff_head *listhead = &q->qdisc->q;
 	
         psched_tdiff_t delay;
 	psched_time_t tnext;
@@ -231,11 +231,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		++q->counter;
 
 	} else {
-		/*
-		 * Do re-ordering by delaying one in Nth packets (insert it 
-		 * at right position in fifo queue)
-		 */
-
+		/* Do re-ordering (insert it at right position in fifo queue) */
 		cb->time_to_send = psched_get_time()+q->reorderdelay;
 		q->counter = 0;
 	}
@@ -245,24 +241,27 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* Optimize for add at tail */
 	if (likely(skb_queue_empty(listhead) || tnext >= q->oldest)) {
 		q->oldest = tnext;
-		ret = qdisc_enqueue(skb, q->qdisc);
+		return qdisc_enqueue_tail(skb, q->qdisc);
         } else {
-
+		/* add in right position according to time_to_send */
 		skb_queue_reverse_walk(listhead, skb3) {
 			const struct netem_skb_cb *cb_iterator = netem_skb_cb(skb3);
-			if (tnext >= cb_iterator->time_to_send) break;
+			if (tnext >= cb_iterator->time_to_send) 
+				break;
 		}
         
 	__skb_queue_after(listhead, skb3, skb);
+	q->qdisc->qstats.backlog += qdisc_pkt_len(skb);
+	q->qdisc->qstats.requeues++;
 	ret = NET_XMIT_SUCCESS;
 	}
 
 	if (likely(ret == NET_XMIT_SUCCESS)) {
-		sch->qstats.backlog += qdisc_pkt_len(skb);
 		sch->q.qlen++;
 		sch->bstats.bytes += qdisc_pkt_len(skb);
 		sch->bstats.packets++;
-		qdisc_watchdog_schedule(&q->watchdog, tnext);
+		/* add watchdog to minimum time_to_send */
+		qdisc_watchdog_schedule(&q->watchdog, min(tnext,q->oldest) ); 
 	} else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
 	}
@@ -314,7 +313,6 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch)
 			sch->q.qlen--;
 			return skb;
 		}
-
 		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send);
 	}
 
