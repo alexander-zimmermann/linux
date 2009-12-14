@@ -54,8 +54,8 @@ struct netem_sched_data {
 
 	psched_tdiff_t latency;
 	psched_tdiff_t jitter;
-
-        psched_time_t oldest;
+        psched_tdiff_t reorderdelayjitter;
+	psched_time_t oldest;
 
 	u32 loss;
 	u32 limit;
@@ -69,7 +69,7 @@ struct netem_sched_data {
 	struct crndstate {
 		u32 last;
 		u32 rho;
-	} delay_cor, loss_cor, dup_cor, reorder_cor, corrupt_cor;
+	} delay_cor, reorderdelay_cor, loss_cor, dup_cor, reorder_cor, corrupt_cor;
 
 	struct disttable {
 		u32  size;
@@ -166,10 +166,13 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	struct sk_buff_head *listhead = &q->qdisc->q;
 	
         psched_tdiff_t delay;
+	psched_tdiff_t reorderdelay;
 	psched_time_t tnext;
 	
 	delay = tabledist(q->latency, q->jitter,
                          &q->delay_cor, q->delay_dist);
+	reorderdelay = tabledist(q->reorderdelay, q->reorderdelayjitter,
+			  	 &q->reorderdelay_cor, q->delay_dist);
 
 	pr_debug("netem_enqueue skb=%p\n", skb);
 
@@ -226,13 +229,13 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	    q->counter < q->gap || 	/* inside last reordering gap */
 	    q->reorder < get_crandom(&q->reorder_cor)) {
 
-		/* no reordering */
+		/* no reordering (add standard delay) */
 		cb->time_to_send = psched_get_time()+delay;
 		++q->counter;
 
 	} else {
-		/* Do re-ordering (insert it at right position in fifo queue) */
-		cb->time_to_send = psched_get_time()+q->reorderdelay;
+		/* Do re-ordering (add reorderdelay) */
+		cb->time_to_send = psched_get_time()+reorderdelay;
 		q->counter = 0;
 	}
 
@@ -253,21 +256,16 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	__skb_queue_after(listhead, skb3, skb);
 	q->qdisc->qstats.backlog += qdisc_pkt_len(skb);
 	q->qdisc->qstats.requeues++;
-	ret = NET_XMIT_SUCCESS;
-	}
+	sch->q.qlen++;
+	sch->bstats.bytes += qdisc_pkt_len(skb);
+	sch->bstats.packets++;
 
-	if (likely(ret == NET_XMIT_SUCCESS)) {
-		sch->q.qlen++;
-		sch->bstats.bytes += qdisc_pkt_len(skb);
-		sch->bstats.packets++;
-		/* add watchdog to minimum time_to_send */
-		qdisc_watchdog_schedule(&q->watchdog, min(tnext,q->oldest) ); 
-	} else if (net_xmit_drop_count(ret)) {
-		sch->qstats.drops++;
-	}
+	/* add watchdog to next time_to_send */
+	qdisc_watchdog_schedule(&q->watchdog, tnext ); 
 
 	pr_debug("netem: enqueue ret %d\n", ret);
-	return ret;
+	return NET_XMIT_SUCCESS;
+	}
 }
 
 static unsigned int netem_drop(struct Qdisc* sch)
@@ -367,6 +365,7 @@ static void get_correlation(struct Qdisc *sch, const struct nlattr *attr)
 	const struct tc_netem_corr *c = nla_data(attr);
 
 	init_crandom(&q->delay_cor, c->delay_corr);
+	init_crandom(&q->reorderdelay_cor, c->reorderdelay_corr);
 	init_crandom(&q->loss_cor, c->loss_corr);
 	init_crandom(&q->dup_cor, c->dup_corr);
 }
@@ -439,6 +438,7 @@ static int netem_change(struct Qdisc *sch, struct nlattr *opt)
 	q->loss = qopt->loss;
 	q->duplicate = qopt->duplicate;
 	q->reorderdelay = qopt->reorderdelay;
+	q->reorderdelayjitter = qopt->reorderdelayjitter;
 
 	/* for compatibility with earlier versions.
 	 * if gap is set, need to assume 100% probability

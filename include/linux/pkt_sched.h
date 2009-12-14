@@ -480,11 +480,13 @@ struct tc_netem_qopt
 	__u32   duplicate;	/* random packet dup  (0=none ~0=100%) */
 	__u32	jitter;		/* random jitter in latency (us) */
         __u32   reorderdelay;   /* delay for reordered packets (us) */
+	__u32	reorderdelayjitter;	/* random jitter for reordered packets (us) */
 };
 
 struct tc_netem_corr
 {
 	__u32	delay_corr;	/* delay correlation */
+	__u32	reorderdelay_corr;	/* reorderdelay correlation */
 	__u32	loss_corr;	/* packet loss correlation */
 	__u32	dup_corr;	/* duplicate correlation  */
 };
