@@ -164,13 +164,13 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	int ret;
 	int count = 1;
 	
-        psched_tdiff_t delay;
+	psched_tdiff_t delay;
 	psched_tdiff_t reorderdelay;
 	
 	delay = tabledist(q->latency, q->jitter,
                          &q->delay_cor, q->delay_dist);
 	reorderdelay = tabledist(q->reorderdelay, q->reorderdelayjitter,
-			  	 &q->reorderdelay_cor, q->delay_dist);
+	                         &q->reorderdelay_cor, q->delay_dist);
 
 	pr_debug("netem_enqueue skb=%p\n", skb);
 
@@ -238,11 +238,11 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	}
 
 	skb3 = q->qdisc->ops->peek(q->qdisc);
-        if (skb3) {
-                const struct netem_skb_cb *cb2 = netem_skb_cb(skb3);
+	if (skb3) {
+		const struct netem_skb_cb *cb2 = netem_skb_cb(skb3);
 
-                /* if new packet is more recent, update watchdog */
-                if (cb->time_to_send < cb2->time_to_send)
+		/* if new packet is more recent, update watchdog */
+		if (cb->time_to_send < cb2->time_to_send)
 			qdisc_watchdog_schedule(&q->watchdog,cb->time_to_send);	
 	}
 
@@ -252,10 +252,10 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		sch->q.qlen++;
 		sch->bstats.bytes += qdisc_pkt_len(skb);
 		sch->bstats.packets++;
-        } else if (net_xmit_drop_count(ret)) {
+	} else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
-        }
-        pr_debug("netem: enqueue ret %d\n", ret);
+	}
+	pr_debug("netem: enqueue ret %d\n", ret);
         
 	return ret;
 }
