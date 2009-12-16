@@ -160,14 +160,11 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* We don't fill cb now as skb_unshare() may invalidate it */
 	struct netem_skb_cb *cb;
 	struct sk_buff *skb2;
-	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
-	struct sk_buff_head *listhead = &q->qdisc->q;
 	
         psched_tdiff_t delay;
 	psched_tdiff_t reorderdelay;
-	psched_time_t tnext;
 	
 	delay = tabledist(q->latency, q->jitter,
                          &q->delay_cor, q->delay_dist);
@@ -234,38 +231,24 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		++q->counter;
 
 	} else {
-		/* Do re-ordering (add reorderdelay) */
+		/* Do reordering (add reorderdelay) */
 		cb->time_to_send = psched_get_time()+reorderdelay;
 		q->counter = 0;
 	}
+	
+	ret = qdisc_enqueue(skb, q->qdisc);
 
-	tnext = cb->time_to_send;
-
-	/* Optimize for add at tail */
-	if (likely(skb_queue_empty(listhead) || tnext >= q->oldest)) {
-		q->oldest = tnext;
-		return qdisc_enqueue_tail(skb, q->qdisc);
-        } else {
-		/* add in right position according to time_to_send */
-		skb_queue_reverse_walk(listhead, skb3) {
-			const struct netem_skb_cb *cb_iterator = netem_skb_cb(skb3);
-			if (tnext >= cb_iterator->time_to_send) 
-				break;
-		}
+	if (likely(ret == NET_XMIT_SUCCESS)) {
+		sch->q.qlen++;
+		sch->bstats.bytes += qdisc_pkt_len(skb);
+		sch->bstats.packets++;
+		qdisc_watchdog_schedule(&q->watchdog,cb->time_to_send);
+        } else if (net_xmit_drop_count(ret)) {
+		sch->qstats.drops++;
+        }
+        pr_debug("netem: enqueue ret %d\n", ret);
         
-	__skb_queue_after(listhead, skb3, skb);
-	q->qdisc->qstats.backlog += qdisc_pkt_len(skb);
-	q->qdisc->qstats.requeues++;
-	sch->q.qlen++;
-	sch->bstats.bytes += qdisc_pkt_len(skb);
-	sch->bstats.packets++;
-
-	/* add watchdog to next time_to_send */
-	qdisc_watchdog_schedule(&q->watchdog, tnext ); 
-
-	pr_debug("netem: enqueue ret %d\n", ret);
-	return NET_XMIT_SUCCESS;
-	}
+	return ret;
 }
 
 static unsigned int netem_drop(struct Qdisc* sch)
@@ -311,7 +294,7 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch)
 			sch->q.qlen--;
 			return skb;
 		}
-		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send);
+		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send); 
 	}
 
 	return NULL;
