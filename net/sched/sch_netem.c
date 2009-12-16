@@ -160,6 +160,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* We don't fill cb now as skb_unshare() may invalidate it */
 	struct netem_skb_cb *cb;
 	struct sk_buff *skb2;
+	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
 	
@@ -235,14 +236,22 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		cb->time_to_send = psched_get_time()+reorderdelay;
 		q->counter = 0;
 	}
-	
+
+	skb3 = q->qdisc->ops->peek(q->qdisc);
+        if (skb3) {
+                const struct netem_skb_cb *cb2 = netem_skb_cb(skb3);
+
+                /* if new packet is more recent, update watchdog */
+                if (cb->time_to_send < cb2->time_to_send)
+			qdisc_watchdog_schedule(&q->watchdog,cb->time_to_send);	
+	}
+
 	ret = qdisc_enqueue(skb, q->qdisc);
 
 	if (likely(ret == NET_XMIT_SUCCESS)) {
 		sch->q.qlen++;
 		sch->bstats.bytes += qdisc_pkt_len(skb);
 		sch->bstats.packets++;
-		qdisc_watchdog_schedule(&q->watchdog,cb->time_to_send);
         } else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
         }
