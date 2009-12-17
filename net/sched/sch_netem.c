@@ -55,7 +55,6 @@ struct netem_sched_data {
 	psched_tdiff_t latency;
 	psched_tdiff_t jitter;
         psched_tdiff_t reorderdelayjitter;
-	psched_time_t oldest;
 
 	u32 loss;
 	u32 limit;
@@ -174,7 +173,6 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 
 	pr_debug("netem_enqueue skb=%p\n", skb);
 
-
 	/* Random duplication */
 	if (q->duplicate && q->duplicate >= get_crandom(&q->dup_cor))
 		++count;
@@ -227,15 +225,18 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	    q->counter < q->gap || 	/* inside last reordering gap */
 	    q->reorder < get_crandom(&q->reorder_cor)) {
 
-		/* no reordering (add standard delay) */
-		cb->time_to_send = psched_get_time()+delay;
+		/* no reordering (use standard delay) */
+		delay = tabledist(q->latency, q->jitter,
+				  &q->delay_cor, q->delay_dist);
 		++q->counter;
 
 	} else {
-		/* Do reordering (add reorderdelay) */
-		cb->time_to_send = psched_get_time()+reorderdelay;
+		/* Do reordering (use reorderdelay) */
+		delay = tabledist(q->reorderdelay, q->reorderdelayjitter,
+				 &q->reorderdelay_cor, q->delay_dist);
 		q->counter = 0;
 	}
+	cb->time_to_send = psched_get_time()+delay;
 
 	skb3 = q->qdisc->ops->peek(q->qdisc);
 	if (skb3) {
@@ -255,8 +256,8 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	} else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
 	}
+	
 	pr_debug("netem: enqueue ret %d\n", ret);
-        
 	return ret;
 }
 
@@ -303,6 +304,7 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch)
 			sch->q.qlen--;
 			return skb;
 		}
+		
 		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send); 
 	}
 
@@ -341,7 +343,7 @@ static int get_dist_table(struct Qdisc *sch, const struct nlattr *attr)
 	d->size = n;
 	for (i = 0; i < n; i++)
 		d->table[i] = data[i];
-
+	
 	root_lock = qdisc_root_sleeping_lock(sch);
 
 	spin_lock_bh(root_lock);
@@ -557,7 +559,6 @@ static int netem_init(struct Qdisc *sch, struct nlattr *opt)
 		pr_debug("netem: qdisc create failed\n");
 		return -ENOMEM;
 	}
-	q->oldest = PSCHED_PASTPERFECT;
 	ret = netem_change(sch, opt);
 	if (ret) {
 		pr_debug("netem: change failed\n");
