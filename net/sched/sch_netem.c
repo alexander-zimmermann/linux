@@ -162,15 +162,8 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
-	
 	psched_tdiff_t delay;
-	psched_tdiff_t reorderdelay;
 	
-	delay = tabledist(q->latency, q->jitter,
-                         &q->delay_cor, q->delay_dist);
-	reorderdelay = tabledist(q->reorderdelay, q->reorderdelayjitter,
-	                         &q->reorderdelay_cor, q->delay_dist);
-
 	pr_debug("netem_enqueue skb=%p\n", skb);
 
 	/* Random duplication */
@@ -256,7 +249,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	} else if (net_xmit_drop_count(ret)) {
 		sch->qstats.drops++;
 	}
-	
+
 	pr_debug("netem: enqueue ret %d\n", ret);
 	return ret;
 }
