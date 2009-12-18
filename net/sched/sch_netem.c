@@ -54,7 +54,7 @@ struct netem_sched_data {
 
 	psched_tdiff_t latency;
 	psched_tdiff_t jitter;
-        psched_tdiff_t reorderdelayjitter;
+	psched_tdiff_t reorderdelayjitter;
 
 	u32 loss;
 	u32 limit;
@@ -159,11 +159,11 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* We don't fill cb now as skb_unshare() may invalidate it */
 	struct netem_skb_cb *cb;
 	struct sk_buff *skb2;
-	struct sk_buff *skb3;
+	struct sk_buff *skb3
 	int ret;
 	int count = 1;
 	psched_tdiff_t delay;
-	
+
 	pr_debug("netem_enqueue skb=%p\n", skb);
 
 	/* Random duplication */
@@ -297,8 +297,8 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch)
 			sch->q.qlen--;
 			return skb;
 		}
-		
-		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send); 
+
+		qdisc_watchdog_schedule(&q->watchdog, cb->time_to_send);
 	}
 
 	return NULL;
@@ -336,7 +336,7 @@ static int get_dist_table(struct Qdisc *sch, const struct nlattr *attr)
 	d->size = n;
 	for (i = 0; i < n; i++)
 		d->table[i] = data[i];
-	
+
 	root_lock = qdisc_root_sleeping_lock(sch);
 
 	spin_lock_bh(root_lock);
@@ -552,6 +552,7 @@ static int netem_init(struct Qdisc *sch, struct nlattr *opt)
 		pr_debug("netem: qdisc create failed\n");
 		return -ENOMEM;
 	}
+
 	ret = netem_change(sch, opt);
 	if (ret) {
 		pr_debug("netem: change failed\n");
@@ -586,7 +587,6 @@ static int netem_dump(struct Qdisc *sch, struct sk_buff *skb)
 	qopt.gap = q->gap;
 	qopt.duplicate = q->duplicate;
 	qopt.reorderdelay = q->reorderdelay;
-	
 	NLA_PUT(skb, TCA_OPTIONS, sizeof(qopt), &qopt);
 
 	cor.delay_corr = q->delay_cor.rho;
