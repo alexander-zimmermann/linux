@@ -159,7 +159,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	/* We don't fill cb now as skb_unshare() may invalidate it */
 	struct netem_skb_cb *cb;
 	struct sk_buff *skb2;
-	struct sk_buff *skb3
+	struct sk_buff *skb3;
 	int ret;
 	int count = 1;
 	psched_tdiff_t delay;

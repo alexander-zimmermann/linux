@@ -486,9 +486,9 @@ struct tc_netem_qopt
 struct tc_netem_corr
 {
 	__u32	delay_corr;		/* delay correlation */
-	__u32	reorderdelay_corr;	/* reorderdelay correlation */
 	__u32	loss_corr;		/* packet loss correlation */
 	__u32	dup_corr;		/* duplicate correlation  */
+	__u32   reorderdelay_corr;      /* reorderdelay correlation */
 };
 
 struct tc_netem_reorder
