@@ -2937,6 +2937,7 @@ void __init tcp_init(void)
 	       tcp_hashinfo.ehash_size, tcp_hashinfo.bhash_size);
 
 	tcp_register_congestion_control(&tcp_reno);
+	tcp_register_reorder(&tcp_native);
 }
 
 EXPORT_SYMBOL(tcp_close);

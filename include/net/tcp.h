@@ -646,6 +646,9 @@ static inline int tcp_skb_mss(const struct sk_buff *skb)
  * Interface for adding new TCP segment reordering handlers
  */
 #define TCP_REORDER_NAME_MAX 16
+#define TCP_REORDER_MAX 128
+#define TCP_REORDER_BUF_MAX  (TCP_REORDER_NAME_MAX*TCP_REORDER_MAX)
+
 #define TCP_REORDER_NON_RESTRICTED 0x1
 
 struct tcp_reorder_ops {
