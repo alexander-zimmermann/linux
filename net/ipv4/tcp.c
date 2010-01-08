@@ -2039,7 +2039,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 	int val;
 	int err = 0;
 
-	/* This is a string value all the others are int's */
+	/* These two are string values all the others are int's */
 	if (optname == TCP_CONGESTION) {
 		char name[TCP_CA_NAME_MAX];
 
@@ -2054,6 +2054,23 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 
 		lock_sock(sk);
 		err = tcp_set_congestion_control(sk, name);
+		release_sock(sk);
+		return err;
+	}
+	if (optname == TCP_REORDER) {
+		char name[TCP_REORDER_NAME_MAX];
+
+		if (optlen < 1)
+			return -EINVAL;
+
+		val = strncpy_from_user(name, optval,
+					min(TCP_REORDER_NAME_MAX-1, optlen));
+		if (val < 0)
+			return -EFAULT;
+		name[val] = 0;
+
+		lock_sock(sk);
+		err = tcp_set_reorder(sk, name);
 		release_sock(sk);
 		return err;
 	}
