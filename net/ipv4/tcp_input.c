@@ -5493,6 +5493,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		tcp_init_metrics(sk);
 
 		tcp_init_congestion_control(sk);
+		tcp_init_reorder(sk);
 
 		/* Prevent spurious tcp_cwnd_restart() on first data
 		 * packet.
@@ -5736,6 +5737,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				tcp_init_metrics(sk);
 
 				tcp_init_congestion_control(sk);
+				tcp_init_reorder(sk);
 
 				/* Prevent spurious tcp_cwnd_restart() on
 				 * first data packet.
