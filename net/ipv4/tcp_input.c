@@ -1345,6 +1345,9 @@ static u8 tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 			}
 		}
 
+		if (inet_csk(sk)->icsk_ro_ops->new_sack)
+			inet_csk(sk)->icsk_ro_ops->new_sack(sk);
+
 		sacked |= TCPCB_SACKED_ACKED;
 		state->flag |= FLAG_DATA_SACKED;
 		tp->sacked_out += pcount;
@@ -1359,9 +1362,6 @@ static u8 tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 
 		if (fack_count > tp->fackets_out)
 			tp->fackets_out = fack_count;
-
-		if (inet_csk(sk)->icsk_ro_ops->new_sack)
-			inet_csk(sk)->icsk_ro_ops->new_sack(sk);
 	}
 
 	/* D-SACK. We can detect redundant retransmission in S|R and plain R
