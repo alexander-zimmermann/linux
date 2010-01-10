@@ -2404,6 +2404,15 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (copy_to_user(optval, icsk->icsk_ca_ops->name, len))
 			return -EFAULT;
 		return 0;
+	case TCP_REORDER:
+		if (get_user(len, optlen))
+			return -EFAULT;
+		len = min_t(unsigned int, len, TCP_REORDER_NAME_MAX);
+		if (put_user(len, optlen))
+			return -EFAULT;
+		if (copy_to_user(optval, icsk->icsk_ro_ops->name, len))
+			return -EFAULT;
+		return 0;
 	default:
 		return -ENOPROTOOPT;
 	}
