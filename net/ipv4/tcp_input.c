@@ -3304,7 +3304,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			/* Non-retransmitted hole got filled? That's reordering */
 			if (reord < prior_fackets) {
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
-				icsk->icsk_ro_ops->sack_hole_filled(sk, flag);
+				if (icsk->icsk_ro_ops->sack_hole_filled)
+					icsk->icsk_ro_ops->sack_hole_filled(sk, flag);
 			}
 
 			delta = tcp_is_fack(tp) ? pkts_acked :
