@@ -57,8 +57,6 @@ static void tcp_ancr_recalc_dupthresh(struct sock *sk)
 
 	// apply bounds
 	ro->dupthresh = clamp_t(u32, dupthresh, MIN_DUPTHRESH, upper_bound);
-
-	printk();
 }
 
 /* New reordering event, recalculate avg and mdev
