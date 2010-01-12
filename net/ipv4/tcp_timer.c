@@ -346,6 +346,9 @@ static void tcp_retransmit_timer(struct sock *sk)
 		NET_INC_STATS_BH(sock_net(sk), mib_idx);
 	}
 
+	if (icsk->icsk_ro_ops->rto_happened)
+		icsk->icsk_ro_ops->rto_happened(sk);
+
 	if (tcp_use_frto(sk)) {
 		tcp_enter_frto(sk);
 	} else {

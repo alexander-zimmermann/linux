@@ -669,6 +669,8 @@ struct tcp_reorder_ops {
 	void (*sm_starts)(struct sock *sk, int flag);
 	void (*set_ssthresh)(struct sock *sk, int flag);
 	void (*cwnd_down)(struct sock *sk, int flag);
+	void (*reorder_detected)(struct sock *sk, int length);
+	void (*rto_happened)(struct sock *sk);
 	int allow_moderation;
 
 	char 		name[TCP_REORDER_NAME_MAX];

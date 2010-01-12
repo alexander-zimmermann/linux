@@ -966,6 +966,8 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 #endif
 		tcp_disable_fack(tp);
 	}
+	if (inet_csk(sk)->icsk_ro_ops->reorder_detected)
+		inet_csk(sk)->icsk_ro_ops->reorder_detected(sk, metric);
 }
 
 /* This must be called before lost_out is incremented */
