@@ -2428,21 +2428,29 @@ static int tcp_time_to_recover(struct sock *sk)
 
 	/* Do not perform any recovery during F-RTO algorithm */
 	if (tp->frto_counter)
+{ printk(KERN_NOTICE "tcp_time_to_recover(): 1. if\n");
 		return 0;
+}
 
 	/* Trick#1: The loss is proven. */
 	if (tp->lost_out)
+{ printk(KERN_NOTICE "tcp_time_to_recover(): 2. if\n");
 		return 1;
+}
 
 	/* Not-A-Trick#2 : Classic rule... */
 	if (tcp_dupack_heurestics(tp) > tcp_dupthresh(sk))
+{ printk(KERN_NOTICE "tcp_time_to_recover(): 3. if\n");
 		return 1;
+}
 
 	/* Trick#3 : when we use RFC2988 timer restart, fast
 	 * retransmit can be triggered by timeout of queue head.
 	 */
-	if (tcp_is_fack(tp) && tcp_head_timedout(sk))
+	if (tcp_is_fack(tp) && tcp_head_timedout(sk) && inet_csk(sk)->icsk_ro_ops->allow_head_to)
+{ printk(KERN_NOTICE "tcp_time_to_recover(): 4. if\n"); 
 		return 1;
+}
 
 	/* Trick#4: It is still not OK... But will it be useful to delay
 	 * recovery more?
@@ -2454,9 +2462,10 @@ static int tcp_time_to_recover(struct sock *sk)
 		/* We have nothing to send. This connection is limited
 		 * either by receiver window or by application.
 		 */
+printk(KERN_NOTICE "tcp_time_to_recover(): 5. if\n");
 		return 1;
 	}
-
+printk(KERN_NOTICE "tcp_time_to_recover(): else\n");
 	return 0;
 }
 
@@ -3063,8 +3072,8 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		if (icsk->icsk_ca_state < TCP_CA_CWR) {
 			if (!(flag & FLAG_ECE))
 				tp->prior_ssthresh = tcp_current_ssthresh(sk);
-			if (unlikely(icsk->icsk_ro_ops->set_ssthresh))
-				icsk->icsk_ro_ops->set_ssthresh(sk, flag);
+			if (unlikely(icsk->icsk_ro_ops->recovery_starts))
+				icsk->icsk_ro_ops->recovery_starts(sk, flag);
 			else
 				tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 			TCP_ECN_queue_cwr(tp);

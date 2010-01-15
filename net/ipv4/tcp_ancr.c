@@ -201,8 +201,8 @@ static void tcp_ancr_sm_starts(struct sock *sk, int flag)
 		tcp_ancr_elt(sk, flag);
 }
 
-/* ssthresh needs to be set */
-static void tcp_ancr_set_ssthresh(struct sock *sk, int flag)
+/* recovery starts */
+static void tcp_ancr_recovery_starts(struct sock *sk, int flag)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -230,11 +230,12 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.new_sack         = tcp_ancr_new_sack,
 	.sack_hole_filled = tcp_ancr_sack_hole_filled,
 	.sm_starts        = tcp_ancr_sm_starts,
-	.set_ssthresh     = tcp_ancr_set_ssthresh,
+	.recovery_starts  = tcp_ancr_recovery_starts,
 	.cwnd_down        = tcp_ancr_cwnd_down,
 	.reorder_detected = tcp_ancr_reordering_detected,
 	.rto_happened     = tcp_ancr_rto_happened,
 	.allow_moderation = 0,
+	.allow_head_to    = 0,
 };
 
 static int __init tcp_ancr_register(void)

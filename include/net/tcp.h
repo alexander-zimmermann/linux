@@ -667,11 +667,12 @@ struct tcp_reorder_ops {
 	/* act, if a non-retransmitted SACK hole was filled */
 	void (*sack_hole_filled)(struct sock *sk, int flag);
 	void (*sm_starts)(struct sock *sk, int flag);
-	void (*set_ssthresh)(struct sock *sk, int flag);
+	void (*recovery_starts)(struct sock *sk, int flag);
 	void (*cwnd_down)(struct sock *sk, int flag);
 	void (*reorder_detected)(struct sock *sk, int length);
 	void (*rto_happened)(struct sock *sk);
 	int allow_moderation;
+	int allow_head_to;
 
 	char 		name[TCP_REORDER_NAME_MAX];
 	struct module	*owner;
