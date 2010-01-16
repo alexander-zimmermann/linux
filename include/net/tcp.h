@@ -668,7 +668,6 @@ struct tcp_reorder_ops {
 	void (*sack_hole_filled)(struct sock *sk, int flag);
 	void (*sm_starts)(struct sock *sk, int flag);
 	void (*recovery_starts)(struct sock *sk, int flag);
-	void (*cwnd_down)(struct sock *sk, int flag);
 	void (*reorder_detected)(struct sock *sk, int length);
 	void (*rto_happened)(struct sock *sk);
 	int allow_moderation;

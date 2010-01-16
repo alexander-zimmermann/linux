@@ -51,12 +51,38 @@ static int tcp_ncr_test(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 printk(KERN_NOTICE "tcp_ncr_test()\n");
-if (tcp_is_sack(tp))
-	printk(KERN_NOTICE "tcp_ncr_test(): SACK enabled\n");
-if (!(tp->nonagle & TCP_NAGLE_OFF))
-	printk(KERN_NOTICE "tcp_ncr_test(): NAGLE enabled\n");
 
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
+}
+
+/* tcp_cwnd_down() is not meant to be used in the disorder phase. It is
+ * implemented under assumptions only valid in the recovery phase.
+ *
+ * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
+ */
+void tcp_ncr_cwnd_down(struct sock *sk, int flag)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct ncr *ro = inet_csk_ro(sk);
+	u32 room = ro->prior_flight_size > tcp_packets_in_flight(tp) ? ro->prior_flight_size - tcp_packets_in_flight(tp) : 0;
+	u32 sent = tp->packets_out > ro->prior_flight_size ? tp->packets_out - ro->prior_flight_size : 0;
+		
+	if (mode == 1) {
+		if (room > sent) {
+			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+printk(KERN_NOTICE "tcp_ncr_cwnd_down(): found room: %i\n", room - sent);
+		} else {
+			tp->snd_cwnd = tcp_packets_in_flight(tp);
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+printk(KERN_NOTICE "tcp_ncr_cwnd_down(): not enough room\n");
+		}
+	} else {
+		if (room) {
+			tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3);   // burst protection
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+		}
+	}
 }
 
 /* TCP-NCR: Initiate Extended Limited Transmit
@@ -66,11 +92,20 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_elt_init()\n");
+printk(KERN_NOTICE "tcp_ncr_elt_init(): how (re-init because of partial ACK): %i\n", how);
+printk(KERN_NOTICE "tcp_ncr_elt_init(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
+		tp->snd_cwnd,
+		tp->snd_ssthresh,
+		tcp_packets_in_flight(tp),
+		tp->sacked_out,
+		tp->packets_out,
+		ro->dupthresh,
+		tp->retrans_out,
+		ro->elt_flag,
+		tp->snd_una);
 	if (!how)
 		ro->prior_flight_size = tp->packets_out;
 	ro->elt_flag = 1;
-	// TODO: use shift
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
 
@@ -92,7 +127,7 @@ printk(KERN_NOTICE "tcp_ncr_elt_end(): cwnd: %i in_flight: %i packets_out: %i du
 	if (how) {
 		/* New cumulative ACK during ELT, it is reordering. */
 		tp->snd_ssthresh = ro->prior_flight_size;
-		tp->snd_cwnd = min(tp->packets_out + 1, ro->prior_flight_size);
+		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_flight_size);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		if (flag & FLAG_DATA_SACKED)
 			tcp_ncr_elt_init(sk, 1);
@@ -114,9 +149,18 @@ static void tcp_ncr_elt(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_elt()\n");
-	if (ro->lt_f == 3)
-		tcp_cwnd_down(sk, flag);
+printk(KERN_NOTICE "tcp_ncr_elt(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
+		tp->snd_cwnd,
+		tp->snd_ssthresh,
+		tcp_packets_in_flight(tp),
+		tp->sacked_out,
+		tp->packets_out,
+		ro->dupthresh,
+		tp->retrans_out,
+		ro->elt_flag,
+		tp->snd_una);
+	if (mode == 1)
+		tcp_ncr_cwnd_down(sk, flag);
 	// TODO: use shift
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
@@ -142,17 +186,17 @@ static void tcp_ncr_new_sack(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_new_sack(): cwnd: %i in_flight: %i packets_out: %i dupthresh: %i retrans_out: %i snd_una: %u\n",
+printk(KERN_NOTICE "-------------------------------------------- NEW SACK --------------------------------------------\n");
+printk(KERN_NOTICE "tcp_ncr_new_sack(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
 		tp->snd_cwnd,
+		tp->snd_ssthresh,
 		tcp_packets_in_flight(tp),
+		tp->sacked_out,
 		tp->packets_out,
 		ro->dupthresh,
 		tp->retrans_out,
+		ro->elt_flag,
 		tp->snd_una);
-if (ro->elt_flag)
-printk(KERN_NOTICE "tcp_ncr_new_sack(): Already in ELT\n");
-if (tp->sacked_out != 0)
-printk(KERN_NOTICE "tcp_ncr_new_sack(): Not the first SACK: sacked_out == %i\n", tp->sacked_out);
 	// only init ELT, if we're not already in ELT and this is the first SACK'ed segment
 	if (tcp_ncr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0))
 		tcp_ncr_elt_init(sk, 0);
@@ -189,14 +233,6 @@ printk(KERN_NOTICE "tcp_ncr_recovery_starts()\n");
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 }
 
-/* cwnd is to be reduced */
-static void tcp_ncr_cwnd_down(struct sock *sk, int flag)
-{
-printk(KERN_NOTICE "tcp_ncr_cwnd_down()\n");
-	if (!tcp_ncr_test(sk))
-		tcp_cwnd_down(sk, flag);
-}
-
 static struct tcp_reorder_ops tcp_ncr = {
 	.flags      = TCP_REORDER_NON_RESTRICTED,
 	.name       = "ncr",
@@ -207,7 +243,6 @@ static struct tcp_reorder_ops tcp_ncr = {
 	.sack_hole_filled = tcp_ncr_sack_hole_filled,
 	.sm_starts  = tcp_ncr_sm_starts,
 	.recovery_starts = tcp_ncr_recovery_starts,
-	.cwnd_down  = tcp_ncr_cwnd_down,
 	.allow_moderation = 0,
 	.allow_head_to = 0,
 };
