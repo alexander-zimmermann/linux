@@ -214,13 +214,6 @@ static void tcp_ancr_recovery_starts(struct sock *sk, int flag)
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 }
 
-/* cwnd is to be reduced */
-static void tcp_ancr_cwnd_down(struct sock *sk, int flag)
-{
-	if (!tcp_ancr_test(sk))
-		tcp_cwnd_down(sk, flag);
-}
-
 static struct tcp_reorder_ops tcp_ancr = {
 	.flags            = TCP_REORDER_NON_RESTRICTED,
 	.name             = "ancr",
@@ -231,7 +224,6 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.sack_hole_filled = tcp_ancr_sack_hole_filled,
 	.sm_starts        = tcp_ancr_sm_starts,
 	.recovery_starts  = tcp_ancr_recovery_starts,
-	.cwnd_down        = tcp_ancr_cwnd_down,
 	.reorder_detected = tcp_ancr_reordering_detected,
 	.rto_happened     = tcp_ancr_rto_happened,
 	.allow_moderation = 0,

@@ -1543,18 +1543,22 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		BUG_ON(!tso_segs);
 
 		cwnd_quota = tcp_cwnd_test(tp, skb);
+printk(KERN_NOTICE "tcp_write_xmit(): cwnd_test: %i", cwnd_quota);
 		if (!cwnd_quota)
 			break;
 
+printk(KERN_NOTICE "tcp_write_xmit(): snd_wnd_test: %i", tcp_snd_wnd_test(tp, skb, mss_now));
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
 			break;
 
 		if (tso_segs == 1) {
+printk(KERN_NOTICE "tcp_write_xmit(): nagle_test: %i", tcp_nagle_test(tp, skb, mss_now, (tcp_skb_is_last(sk, skb) ? nonagle : TCP_NAGLE_PUSH)));
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 						     (tcp_skb_is_last(sk, skb) ?
 						      nonagle : TCP_NAGLE_PUSH))))
 				break;
 		} else {
+printk(KERN_NOTICE "tcp_write_xmit(): tso_defer: %i", tcp_tso_should_defer(sk, skb));
 			if (!push_one && tcp_tso_should_defer(sk, skb))
 				break;
 		}
@@ -1571,7 +1575,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
+{
+printk(KERN_NOTICE "tcp_write_xmit(): tcp_transmit_skb FAILED!");
 			break;
+}
 
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
@@ -2583,3 +2590,4 @@ EXPORT_SYMBOL(tcp_make_synack);
 EXPORT_SYMBOL(tcp_simple_retransmit);
 EXPORT_SYMBOL(tcp_sync_mss);
 EXPORT_SYMBOL(tcp_mtup_init);
+EXPORT_SYMBOL(tcp_may_send_now);

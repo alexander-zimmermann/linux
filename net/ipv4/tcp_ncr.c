@@ -71,7 +71,7 @@ void tcp_ncr_cwnd_down(struct sock *sk, int flag)
 		if (room > sent) {
 			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
 			tp->snd_cwnd_stamp = tcp_time_stamp;
-printk(KERN_NOTICE "tcp_ncr_cwnd_down(): found room: %i\n", room - sent);
+printk(KERN_NOTICE "tcp_ncr_cwnd_down(): found room: %i tcp_may_send_now: %i\n", room - sent, tcp_may_send_now(sk));
 		} else {
 			tp->snd_cwnd = tcp_packets_in_flight(tp);
 			tp->snd_cwnd_stamp = tcp_time_stamp;
