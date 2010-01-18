@@ -107,6 +107,34 @@ static int tcp_ancr_test(struct sock *sk)
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
 }
 
+/* tcp_cwnd_down() is not meant to be used in the disorder phase. It is
+ * implemented under assumptions only valid in the recovery phase.
+ *
+ * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
+ */
+void tcp_ancr_cwnd_down(struct sock *sk, int flag)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct ancr *ro = inet_csk_ro(sk);
+	u32 room = ro->prior_flight_size > tcp_packets_in_flight(tp) ? ro->prior_flight_size - tcp_packets_in_flight(tp) : 0;
+	u32 sent = tp->packets_out > ro->prior_flight_size ? tp->packets_out - ro->prior_flight_size : 0;
+		
+	if (mode == 1) {
+		if (room > sent) {
+			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+		} else {
+			tp->snd_cwnd = tcp_packets_in_flight(tp);
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+		}
+	} else {
+		if (room) {
+			tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3);   // burst protection
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+		}
+	}
+}
+
 /* TCP-ancr: Initiate Extended Limited Transmit
  * (RFC 4653 Initialization)
  */
@@ -132,7 +160,7 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int how)
 	if (how) {
 		/* New cumulative ACK during ELT, it is reordering. */
 		tp->snd_ssthresh = ro->prior_flight_size;
-		tp->snd_cwnd = min(tp->packets_out + 1, ro->prior_flight_size);
+		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_flight_size);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		if (flag & FLAG_DATA_SACKED)
 			tcp_ancr_elt_init(sk, 1);
@@ -153,8 +181,7 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int how)
 static void tcp_ancr_elt(struct sock *sk, int flag)
 {
 	if (mode == 1)
-		tcp_cwnd_down(sk, flag);
-//	tcp_ancr_recalc_dupthresh(sk);
+		tcp_ancr_cwnd_down(sk, flag);
 }
 
 /* Return the dupthresh.

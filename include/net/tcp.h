@@ -486,7 +486,6 @@ extern void tcp_send_delayed_ack(struct sock *sk);
 
 /* tcp_input.c */
 extern void tcp_cwnd_application_limited(struct sock *sk);
-extern void tcp_cwnd_down(struct sock *sk, int flag);
 
 /* tcp_timer.c */
 extern void tcp_init_xmit_timers(struct sock *);

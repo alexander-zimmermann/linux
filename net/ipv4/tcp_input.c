@@ -2594,7 +2594,7 @@ static inline u32 tcp_cwnd_min(const struct sock *sk)
 }
 
 /* Decrease cwnd each second ack. */
-void tcp_cwnd_down(struct sock *sk, int flag)
+static void tcp_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int decr = tp->snd_cwnd_cnt + 1;
@@ -5857,7 +5857,6 @@ discard:
 EXPORT_SYMBOL(sysctl_tcp_ecn);
 EXPORT_SYMBOL(sysctl_tcp_reordering);
 EXPORT_SYMBOL(sysctl_tcp_adv_win_scale);
-EXPORT_SYMBOL(tcp_cwnd_down);
 EXPORT_SYMBOL(tcp_parse_options);
 #ifdef CONFIG_TCP_MD5SIG
 EXPORT_SYMBOL(tcp_parse_md5sig_option);

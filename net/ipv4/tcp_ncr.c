@@ -130,7 +130,6 @@ static void tcp_ncr_elt(struct sock *sk, int flag)
 
 	if (mode == 1)
 		tcp_ncr_cwnd_down(sk, flag);
-	// TODO: use shift
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
 
