@@ -2456,6 +2456,7 @@ static int tcp_time_to_recover(struct sock *sk)
 		 */
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -2593,7 +2594,7 @@ static inline u32 tcp_cwnd_min(const struct sock *sk)
 }
 
 /* Decrease cwnd each second ack. */
-void tcp_cwnd_down(struct sock *sk, int flag)
+static void tcp_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int decr = tp->snd_cwnd_cnt + 1;

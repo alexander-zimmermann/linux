@@ -2583,4 +2583,3 @@ EXPORT_SYMBOL(tcp_make_synack);
 EXPORT_SYMBOL(tcp_simple_retransmit);
 EXPORT_SYMBOL(tcp_sync_mss);
 EXPORT_SYMBOL(tcp_mtup_init);
-EXPORT_SYMBOL(tcp_may_send_now);
