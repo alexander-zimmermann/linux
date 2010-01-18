@@ -54,31 +54,6 @@ static int tcp_ncr_test(struct sock *sk)
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
 }
 
-/* tcp_cwnd_down() is not meant to be used in the disorder phase. It is
- * implemented under assumptions only valid in the recovery phase.
- *
- * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
- */
-void tcp_ncr_cwnd_down(struct sock *sk, int flag)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct ncr *ro = inet_csk_ro(sk);
-	u32 sent;
-	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ? ro->prior_packets_out - tcp_packets_in_flight(tp) : 0;
-		
-	if (mode == 1) {
-		sent = tp->packets_out > ro->prior_packets_out ?
-			tp->packets_out - ro->prior_packets_out :
-			0;
-		room = room > sent ?
-			room - sent :
-			0;
-	}
-
-	tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3); // burst protection
-	tp->snd_cwnd_stamp = tcp_time_stamp;
-}
-
 /* TCP-NCR: Initiate Extended Limited Transmit
  * (RFC 4653 Initialization)
  */
@@ -121,14 +96,32 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
 
 /* TCP-NCR: Extended Limited Transmit
  * (RFC 4653 Main Part)
+ *
+ * tcp_cwnd_down() is not meant to be used in the disorder phase. It is
+ * implemented under assumptions only valid in the recovery phase.
+ * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
  */
-static void tcp_ncr_elt(struct sock *sk, int flag)
+static void tcp_ncr_elt(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
+	u32 sent;
+	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ?
+		ro->prior_packets_out - tcp_packets_in_flight(tp) :
+		0;
+		
+	if (mode == 1) {
+		sent = tp->packets_out > ro->prior_packets_out ?
+			tp->packets_out - ro->prior_packets_out :
+			0;
+		room = room > sent ?
+			room - sent :
+			0;
+	}
 
-	if (mode == 1)
-		tcp_ncr_cwnd_down(sk, flag);
+	tp->snd_cwnd = tcp_packets_in_flight(tp) + min_t(u32, room, 3); // burst protection
+	tp->snd_cwnd_stamp = tcp_time_stamp;
+
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
 
@@ -173,7 +166,7 @@ static void tcp_ncr_sm_starts(struct sock *sk, int flag)
 	struct ncr *ro = inet_csk_ro(sk);
 
 	if (ro->elt_flag && (flag & FLAG_DATA_SACKED))
-		tcp_ncr_elt(sk, flag);
+		tcp_ncr_elt(sk);
 }
 
 /* recovery starts */

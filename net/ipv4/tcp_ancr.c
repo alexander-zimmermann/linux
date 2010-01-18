@@ -58,6 +58,9 @@ static void tcp_ancr_recalc_dupthresh(struct sock *sk)
 	//                                |      about 0.7 * rto / rtt                   |
 	u32 upper_bound = tp->snd_cwnd * (((45 * ((icsk->icsk_rto << 3) / tp->srtt)) >> 6) - 2);
 
+	// FIXME: see above
+	upper_bound = 256;
+
 	// apply bounds
 	ro->dupthresh = clamp_t(u32, dupthresh, MIN_DUPTHRESH, upper_bound);
 }
@@ -105,31 +108,6 @@ static int tcp_ancr_test(struct sock *sk)
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
 }
 
-/* tcp_cwnd_down() is not meant to be used in the disorder phase. It is
- * implemented under assumptions only valid in the recovery phase.
- *
- * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
- */
-void tcp_ancr_cwnd_down(struct sock *sk, int flag)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct ancr *ro = inet_csk_ro(sk);
-	u32 sent;
-	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ? ro->prior_packets_out - tcp_packets_in_flight(tp) : 0;
-		
-	if (mode == 1) {
-		sent = tp->packets_out > ro->prior_packets_out ?
-			tp->packets_out - ro->prior_packets_out :
-			0;
-		room = room > sent ?
-			room - sent :
-			0;
-	}
-
-	tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3); // burst protection
-	tp->snd_cwnd_stamp = tcp_time_stamp;
-}
-
 /* TCP-ancr: Initiate Extended Limited Transmit
  * (RFC 4653 Initialization)
  */
@@ -171,11 +149,31 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int how)
 
 /* TCP-ancr: Extended Limited Transmit
  * (RFC 4653 Main Part)
+ *
+ * tcp_cwnd_down() is not meant to be used in the disorder phase. It is
+ * implemented under assumptions only valid in the recovery phase.
+ * So, we need our own version for ELT, similar to the "E"-steps in RFC 4653
  */
-static void tcp_ancr_elt(struct sock *sk, int flag)
+static void tcp_ancr_elt(struct sock *sk)
 {
-	if (mode == 1)
-		tcp_ancr_cwnd_down(sk, flag);
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct ancr *ro = inet_csk_ro(sk);
+	u32 sent;
+	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ?
+		ro->prior_packets_out - tcp_packets_in_flight(tp) :
+		0;
+		
+	if (mode == 1) {
+		sent = tp->packets_out > ro->prior_packets_out ?
+			tp->packets_out - ro->prior_packets_out :
+			0;
+		room = room > sent ?
+			room - sent :
+			0;
+	}
+
+	tp->snd_cwnd = tcp_packets_in_flight(tp) + min_t(u32, room, 3); // burst protection
+	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
 /* Return the dupthresh.
@@ -219,7 +217,7 @@ static void tcp_ancr_sm_starts(struct sock *sk, int flag)
 	struct ancr *ro = inet_csk_ro(sk);
 
 	if (ro->elt_flag && (flag & FLAG_DATA_SACKED))
-		tcp_ancr_elt(sk, flag);
+		tcp_ancr_elt(sk);
 }
 
 /* recovery starts */
