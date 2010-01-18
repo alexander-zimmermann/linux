@@ -28,7 +28,6 @@ struct ncr {
 
 static inline void tcp_ncr_reset(struct ncr *ro)
 {
-printk(KERN_NOTICE "tcp_ncr_reset(): mode=%i\n", mode);
 	ro->elt_flag = 0;
 	ro->dupthresh = TCP_FASTRETRANS_THRESH;
 	if (mode == 2)
@@ -40,7 +39,6 @@ printk(KERN_NOTICE "tcp_ncr_reset(): mode=%i\n", mode);
 
 static void tcp_ncr_init(struct sock *sk)
 {
-printk(KERN_NOTICE "tcp_ncr_init()\n");
 	tcp_ncr_reset(inet_csk_ro(sk));
 }
 
@@ -50,7 +48,6 @@ printk(KERN_NOTICE "tcp_ncr_init()\n");
 static int tcp_ncr_test(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-printk(KERN_NOTICE "tcp_ncr_test()\n");
 
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
 }
@@ -71,11 +68,9 @@ void tcp_ncr_cwnd_down(struct sock *sk, int flag)
 		if (room > sent) {
 			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
 			tp->snd_cwnd_stamp = tcp_time_stamp;
-printk(KERN_NOTICE "tcp_ncr_cwnd_down(): found room: %i tcp_may_send_now: %i\n", room - sent, tcp_may_send_now(sk));
 		} else {
 			tp->snd_cwnd = tcp_packets_in_flight(tp);
 			tp->snd_cwnd_stamp = tcp_time_stamp;
-printk(KERN_NOTICE "tcp_ncr_cwnd_down(): not enough room\n");
 		}
 	} else {
 		if (room) {
@@ -92,17 +87,7 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_elt_init(): how (re-init because of partial ACK): %i\n", how);
-printk(KERN_NOTICE "tcp_ncr_elt_init(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
-		tp->snd_cwnd,
-		tp->snd_ssthresh,
-		tcp_packets_in_flight(tp),
-		tp->sacked_out,
-		tp->packets_out,
-		ro->dupthresh,
-		tp->retrans_out,
-		ro->elt_flag,
-		tp->snd_una);
+
 	if (!how)
 		ro->prior_flight_size = tp->packets_out;
 	ro->elt_flag = 1;
@@ -116,14 +101,7 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_elt_end(): cwnd: %i in_flight: %i packets_out: %i dupthresh: %i retrans_out: %i snd_una: %u how: %i\n",
-		tp->snd_cwnd,
-		tcp_packets_in_flight(tp),
-		tp->packets_out,
-		ro->dupthresh,
-		tp->retrans_out,
-		tp->snd_una,
-		how);
+
 	if (how) {
 		/* New cumulative ACK during ELT, it is reordering. */
 		tp->snd_ssthresh = ro->prior_flight_size;
@@ -149,16 +127,7 @@ static void tcp_ncr_elt(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_elt(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
-		tp->snd_cwnd,
-		tp->snd_ssthresh,
-		tcp_packets_in_flight(tp),
-		tp->sacked_out,
-		tp->packets_out,
-		ro->dupthresh,
-		tp->retrans_out,
-		ro->elt_flag,
-		tp->snd_una);
+
 	if (mode == 1)
 		tcp_ncr_cwnd_down(sk, flag);
 	// TODO: use shift
@@ -175,9 +144,8 @@ static u32 tcp_ncr_dupthresh(struct sock *sk)
 	struct ncr *ro = inet_csk_ro(sk);
 
 	if (ro->elt_flag && tcp_ncr_test(sk))
-{printk(KERN_NOTICE "tcp_ncr_dupthresh(): NCR\n");
 		return ro->dupthresh;
-}printk(KERN_NOTICE "tcp_ncr_dupthresh(): Native\n");
+
 	return tp->reordering;
 }
 
@@ -186,17 +154,7 @@ static void tcp_ncr_new_sack(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "-------------------------------------------- NEW SACK --------------------------------------------\n");
-printk(KERN_NOTICE "tcp_ncr_new_sack(): cwnd: %i ssthresh: %i in_flight: %i sacked_out: %i packets_out: %i dupthresh: %i retrans_out: %i elt_flag: %i snd_una: %u\n",
-		tp->snd_cwnd,
-		tp->snd_ssthresh,
-		tcp_packets_in_flight(tp),
-		tp->sacked_out,
-		tp->packets_out,
-		ro->dupthresh,
-		tp->retrans_out,
-		ro->elt_flag,
-		tp->snd_una);
+
 	// only init ELT, if we're not already in ELT and this is the first SACK'ed segment
 	if (tcp_ncr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0))
 		tcp_ncr_elt_init(sk, 0);
@@ -206,7 +164,7 @@ printk(KERN_NOTICE "tcp_ncr_new_sack(): cwnd: %i ssthresh: %i in_flight: %i sack
 static void tcp_ncr_sack_hole_filled(struct sock *sk, int flag)
 {
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_sack_hole_filled()\n");
+
 	if (ro->elt_flag)
 		tcp_ncr_elt_end(sk, flag, 1);
 }
@@ -215,7 +173,7 @@ printk(KERN_NOTICE "tcp_ncr_sack_hole_filled()\n");
 static void tcp_ncr_sm_starts(struct sock *sk, int flag)
 {
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_sm_starts()\n");
+
 	if (ro->elt_flag && (flag & FLAG_DATA_SACKED))
 		tcp_ncr_elt(sk, flag);
 }
@@ -226,7 +184,7 @@ static void tcp_ncr_recovery_starts(struct sock *sk, int flag)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-printk(KERN_NOTICE "tcp_ncr_recovery_starts()\n");
+
 	if (ro->elt_flag)
 		tcp_ncr_elt_end(sk, flag, 0);
 	else

@@ -2428,29 +2428,21 @@ static int tcp_time_to_recover(struct sock *sk)
 
 	/* Do not perform any recovery during F-RTO algorithm */
 	if (tp->frto_counter)
-{ printk(KERN_NOTICE "tcp_time_to_recover(): 1. if\n");
 		return 0;
-}
 
 	/* Trick#1: The loss is proven. */
 	if (tp->lost_out)
-{ printk(KERN_NOTICE "tcp_time_to_recover(): 2. if\n");
 		return 1;
-}
 
 	/* Not-A-Trick#2 : Classic rule... */
 	if (tcp_dupack_heurestics(tp) > tcp_dupthresh(sk))
-{ printk(KERN_NOTICE "tcp_time_to_recover(): 3. if\n");
 		return 1;
-}
 
 	/* Trick#3 : when we use RFC2988 timer restart, fast
 	 * retransmit can be triggered by timeout of queue head.
 	 */
 	if (tcp_is_fack(tp) && tcp_head_timedout(sk) && inet_csk(sk)->icsk_ro_ops->allow_head_to)
-{ printk(KERN_NOTICE "tcp_time_to_recover(): 4. if\n"); 
 		return 1;
-}
 
 	/* Trick#4: It is still not OK... But will it be useful to delay
 	 * recovery more?
@@ -2462,10 +2454,8 @@ static int tcp_time_to_recover(struct sock *sk)
 		/* We have nothing to send. This connection is limited
 		 * either by receiver window or by application.
 		 */
-printk(KERN_NOTICE "tcp_time_to_recover(): 5. if\n");
 		return 1;
 	}
-printk(KERN_NOTICE "tcp_time_to_recover(): else\n");
 	return 0;
 }
 
@@ -2607,22 +2597,18 @@ void tcp_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int decr = tp->snd_cwnd_cnt + 1;
-printk(KERN_NOTICE "tcp_cwnd_down()\n");
+
 	if ((flag & (FLAG_ANY_PROGRESS | FLAG_DSACKING_ACK)) ||
 	    (tcp_is_reno(tp) && !(flag & FLAG_NOT_DUP))) {
 		tp->snd_cwnd_cnt = decr & 1;
 		decr >>= 1;
 
 		if (decr && tp->snd_cwnd > tcp_cwnd_min(sk))
-{printk(KERN_NOTICE "tcp_cwnd_down(): reducing cwnd from %i to %i\n", tp->snd_cwnd, tp->snd_cwnd - decr);
 			tp->snd_cwnd -= decr;
-}
+
 		tp->snd_cwnd = min(tp->snd_cwnd, tcp_packets_in_flight(tp) + 1);
-printk(KERN_NOTICE "tcp_cwnd_down(): cwnd after burst-clamp: %i (in_flight: %i)\n", tp->snd_cwnd, tcp_packets_in_flight(tp));
 		tp->snd_cwnd_stamp = tcp_time_stamp;
-return;
 	}
-printk(KERN_NOTICE "tcp_cwnd_down(): Nothing done!\n");
 }
 
 /* Nothing was retransmitted or returned timestamp is less
