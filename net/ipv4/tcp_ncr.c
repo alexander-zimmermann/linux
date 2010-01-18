@@ -3,6 +3,11 @@
  *
  * Implements RFC4653
  * http://www.ietf.org/rfc/rfc4653.txt
+ *
+ * While reading this code, remember:
+ *      Linux                  IETF
+ *   packets_out            FLIGHT_SIZE
+ * tcp_flight_size()          pipe()
  */
 
 #include <linux/mm.h>
@@ -23,7 +28,7 @@ struct ncr {
 	u8  elt_flag;
 	u8  dupthresh;
 	u8  lt_f;
-	u32 prior_flight_size;
+	u32 prior_packets_out;
 };
 
 static inline void tcp_ncr_reset(struct ncr *ro)
@@ -34,7 +39,7 @@ static inline void tcp_ncr_reset(struct ncr *ro)
 		ro->lt_f = 4;
 	else
 		ro->lt_f = 3;
-	ro->prior_flight_size = 0;
+	ro->prior_packets_out = 0;
 }
 
 static void tcp_ncr_init(struct sock *sk)
@@ -61,8 +66,8 @@ void tcp_ncr_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
-	u32 room = ro->prior_flight_size > tcp_packets_in_flight(tp) ? ro->prior_flight_size - tcp_packets_in_flight(tp) : 0;
-	u32 sent = tp->packets_out > ro->prior_flight_size ? tp->packets_out - ro->prior_flight_size : 0;
+	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ? ro->prior_packets_out - tcp_packets_in_flight(tp) : 0;
+	u32 sent = tp->packets_out > ro->prior_packets_out ? tp->packets_out - ro->prior_packets_out : 0;
 		
 	if (mode == 1) {
 		if (room > sent) {
@@ -89,7 +94,7 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 	struct ncr *ro = inet_csk_ro(sk);
 
 	if (!how)
-		ro->prior_flight_size = tp->packets_out;
+		ro->prior_packets_out = tp->packets_out;
 	ro->elt_flag = 1;
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
@@ -104,8 +109,8 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
 
 	if (how) {
 		/* New cumulative ACK during ELT, it is reordering. */
-		tp->snd_ssthresh = ro->prior_flight_size;
-		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_flight_size);
+		tp->snd_ssthresh = ro->prior_packets_out;
+		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		if (flag & FLAG_DATA_SACKED)
 			tcp_ncr_elt_init(sk, 1);
@@ -113,7 +118,7 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
 			ro->elt_flag = 0;
 	} else {
 		/* Dupthresh is reached, start recovery */
-		tp->snd_ssthresh = (ro->prior_flight_size/2);
+		tp->snd_ssthresh = (ro->prior_packets_out/2);
 		tp->snd_cwnd = tp->snd_ssthresh;
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		ro->elt_flag = 0;
