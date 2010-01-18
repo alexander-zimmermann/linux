@@ -116,23 +116,20 @@ void tcp_ancr_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
+	u32 sent;
 	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ? ro->prior_packets_out - tcp_packets_in_flight(tp) : 0;
-	u32 sent = tp->packets_out > ro->prior_packets_out ? tp->packets_out - ro->prior_packets_out : 0;
 		
 	if (mode == 1) {
-		if (room > sent) {
-			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		} else {
-			tp->snd_cwnd = tcp_packets_in_flight(tp);
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		}
-	} else {
-		if (room) {
-			tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3);   // burst protection
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		}
+		sent = tp->packets_out > ro->prior_packets_out ?
+			tp->packets_out - ro->prior_packets_out :
+			0;
+		room = room > sent ?
+			room - sent :
+			0;
 	}
+
+	tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3); // burst protection
+	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
 /* TCP-ancr: Initiate Extended Limited Transmit
@@ -146,7 +143,6 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 	if (!how)
 		ro->prior_packets_out = tp->packets_out;
 	ro->elt_flag = 1;
-//	tcp_ancr_recalc_dupthresh(sk);
 }
 
 /* TCP-ancr Extended Limited Transmit

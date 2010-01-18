@@ -66,23 +66,20 @@ void tcp_ncr_cwnd_down(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
+	u32 sent;
 	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ? ro->prior_packets_out - tcp_packets_in_flight(tp) : 0;
-	u32 sent = tp->packets_out > ro->prior_packets_out ? tp->packets_out - ro->prior_packets_out : 0;
 		
 	if (mode == 1) {
-		if (room > sent) {
-			tp->snd_cwnd = tcp_packets_in_flight(tp) + room - sent;
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		} else {
-			tp->snd_cwnd = tcp_packets_in_flight(tp);
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		}
-	} else {
-		if (room) {
-			tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3);   // burst protection
-			tp->snd_cwnd_stamp = tcp_time_stamp;
-		}
+		sent = tp->packets_out > ro->prior_packets_out ?
+			tp->packets_out - ro->prior_packets_out :
+			0;
+		room = room > sent ?
+			room - sent :
+			0;
 	}
+
+	tp->snd_cwnd = tcp_packets_in_flight(tp) + max_t(u32, room, 3); // burst protection
+	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
 /* TCP-NCR: Initiate Extended Limited Transmit
