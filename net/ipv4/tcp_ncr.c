@@ -31,8 +31,10 @@ struct ncr {
 	u32 prior_packets_out;
 };
 
-static inline void tcp_ncr_reset(struct ncr *ro)
+static inline void tcp_ncr_init(struct sock *sk)
 {
+	struct ncr *ro = inet_csk_ro(sk);
+
 	ro->elt_flag = 0;
 	ro->dupthresh = TCP_FASTRETRANS_THRESH;
 	if (mode == 2)
@@ -40,11 +42,6 @@ static inline void tcp_ncr_reset(struct ncr *ro)
 	else
 		ro->lt_f = 3;
 	ro->prior_packets_out = 0;
-}
-
-static void tcp_ncr_init(struct sock *sk)
-{
-	tcp_ncr_reset(inet_csk_ro(sk));
 }
 
 /* TCP-NCR: Test if TCP-NCR may be used

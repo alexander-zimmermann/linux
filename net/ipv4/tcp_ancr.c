@@ -31,8 +31,10 @@ struct ancr {
 	u32 rodist_mdev;
 };
 
-static inline void tcp_ancr_reset(struct ancr *ro)
+static inline void tcp_ancr_init(struct sock *sk)
 {
+	struct ancr *ro = inet_csk_ro(sk);
+
 	ro->elt_flag = 0;
 	ro->dupthresh = MIN_DUPTHRESH;
 	ro->prior_packets_out = 0;
@@ -51,6 +53,7 @@ static void tcp_ancr_recalc_dupthresh(struct sock *sk)
 	//                                |    about 0.3 * mdev         |
 	u32 dupthresh   = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
 
+	// FIXME: Who says rto/rtt is really >2 ???
 	// upper bound. srtt is the RTT-Value left-shifted by 3. So left-shift rto for a correct RTO/RTT ratio
 	//                                |      about 0.7 * rto / rtt                   |
 	u32 upper_bound = tp->snd_cwnd * (((45 * ((icsk->icsk_rto << 3) / tp->srtt)) >> 6) - 2);
@@ -90,11 +93,6 @@ static void tcp_ancr_rto_happened(struct sock *sk)
 
 		tcp_ancr_recalc_dupthresh(sk);
 	}
-}
-
-static void tcp_ancr_init(struct sock *sk)
-{
-	tcp_ancr_reset(inet_csk_ro(sk));
 }
 
 /* TCP-ancr: Test if TCP-ancr may be used
