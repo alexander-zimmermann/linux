@@ -13,7 +13,7 @@
 #include <net/tcp.h>
 
 #define MIN_DUPTHRESH 3
-#define FIXED_POINT_SHIFT 16
+#define FIXED_POINT_SHIFT 8
 
 // copied from tcp_input.c
 #define FLAG_DATA_SACKED    0x20 // New SACK.
@@ -70,14 +70,19 @@ static void tcp_ancr_recalc_dupthresh(struct sock *sk)
 static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 {
 	struct ancr *ro = inet_csk_ro(sk);
-	u32 aerr;
+	u32 aerr = 0;
 	u32 slength = length << FIXED_POINT_SHIFT;
 
-	// recalculate avg and mdev. order is important, here!
-	aerr = abs(ro->rodist_avg - slength);
-	//                |  about 0.3 * aerr |   |   about  0.7 * mdev       |
-	ro->rodist_mdev = ((19 * aerr)    >> 6) + ((45 * ro->rodist_mdev) >> 6);
-	ro->rodist_avg  = ((19 * slength) >> 6) + ((45 * ro->rodist_avg)  >> 6);
+	// on the first event, avg needs to be initialized properly
+	if (unlikely(!ro->rodist_avg && !ro->rodist_mdev)) {
+		ro->rodist_avg = slength;
+	} else {
+		// recalculate avg and mdev. order is important, here!
+		aerr = abs(ro->rodist_avg - slength);
+		//                |  about 0.3 * aerr |   |   about  0.7 * mdev       |
+		ro->rodist_mdev = ((19 * aerr)    >> 6) + ((45 * ro->rodist_mdev) >> 6);
+		ro->rodist_avg  = ((19 * slength) >> 6) + ((45 * ro->rodist_avg)  >> 6);
+	}
 
 	tcp_ancr_recalc_dupthresh(sk);
 }
