@@ -71,12 +71,13 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 /* TCP-NCR Extended Limited Transmit
  * (RFC 4653 Termination)
  */
-static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
+static void tcp_ncr_elt_end(struct sock *sk, int flag , int cumack)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
 
-	if (how) {
+	if (cumack) {
 		/* New cumulative ACK during ELT, it is reordering. */
 		tp->snd_ssthresh = ro->prior_packets_out;
 		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
@@ -87,9 +88,15 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int how)
 			ro->elt_flag = 0;
 	} else {
 		/* Dupthresh is reached, start recovery */
-		tp->snd_ssthresh = (ro->prior_packets_out/2);
-		tp->snd_cwnd = tp->snd_ssthresh;
+		// Don't force the RFC
+		//tp->snd_ssthresh = (ro->prior_packets_out/2);
+		//tp->snd_cwnd = tp->snd_ssthresh;
+		//tp->snd_cwnd_stamp = tcp_time_stamp;
+		// Instead, let the usual Linux recovery happen (with ratehalving)
+		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
+		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
+
 		ro->elt_flag = 0;
 	}
 }
