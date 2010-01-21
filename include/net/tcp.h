@@ -468,8 +468,8 @@ extern __u32 cookie_v6_init_sequence(struct sock *sk, struct sk_buff *skb,
 extern void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 				      int nonagle);
 extern int tcp_may_send_now(struct sock *sk);
-extern int tcp_retransmit_skb(struct sock *, struct sk_buff *);
-extern void tcp_xmit_retransmit_queue(struct sock *);
+extern int tcp_retransmit_skb(struct sock *, struct sk_buff *, int fast_rexmit);
+extern void tcp_xmit_retransmit_queue(struct sock *, int fast_rexmit);
 extern void tcp_simple_retransmit(struct sock *);
 extern int tcp_trim_head(struct sock *, struct sk_buff *, u32);
 extern int tcp_fragment(struct sock *, struct sk_buff *, u32, unsigned int);

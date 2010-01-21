@@ -158,6 +158,8 @@ struct tcp_info
 	__u32	tcpi_rcv_space;
 
 	__u32	tcpi_total_retrans;
+	__u32	tcpi_total_fast_retrans;
+	__u32	tcpi_total_rto_retrans;
 };
 
 /* for TCP_MD5SIG socket option */
@@ -373,6 +375,8 @@ struct tcp_sock {
 	u32	undo_marker;	/* tracking retrans started here. */
 	int	undo_retrans;	/* number of undoable retransmissions. */
 	u32	total_retrans;	/* Total retransmits for entire connection */
+	u32	total_fast_retrans;	/* Total fast retransmits for entire connection */
+	u32	total_rto_retrans;	/* Total RTO retransmits for entire connection */
 
 	u32	urg_seq;	/* Seq of received urgent pointer */
 	unsigned int		keepalive_time;	  /* time before keep alive takes place */

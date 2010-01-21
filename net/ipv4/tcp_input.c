@@ -2277,7 +2277,7 @@ static int tcp_check_sack_reneging(struct sock *sk, int flag)
 
 		tcp_enter_loss(sk, 1);
 		icsk->icsk_retransmits++;
-		tcp_retransmit_skb(sk, tcp_write_queue_head(sk));
+		tcp_retransmit_skb(sk, tcp_write_queue_head(sk), 0);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  icsk->icsk_rto, TCP_RTO_MAX);
 		return 1;
@@ -2902,7 +2902,7 @@ void tcp_simple_retransmit(struct sock *sk)
 		tp->undo_marker = 0;
 		tcp_set_ca_state(sk, TCP_CA_Loss);
 	}
-	tcp_xmit_retransmit_queue(sk);
+	tcp_xmit_retransmit_queue(sk, 0);
 }
 
 /* Process an event, which can update packets-in-flight not trivially.
@@ -3013,7 +3013,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 			tcp_reset_reno_sack(tp);
 		if (!tcp_try_undo_loss(sk)) {
 			tcp_moderate_cwnd(tp);
-			tcp_xmit_retransmit_queue(sk);
+			tcp_xmit_retransmit_queue(sk, 0);
 			return;
 		}
 		if (icsk->icsk_ca_state != TCP_CA_Open)
@@ -3079,7 +3079,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 	if (do_lost || (tcp_is_fack(tp) && tcp_head_timedout(sk)))
 		tcp_update_scoreboard(sk, fast_rexmit);
 	tcp_cwnd_down(sk, flag);
-	tcp_xmit_retransmit_queue(sk);
+	tcp_xmit_retransmit_queue(sk, fast_rexmit);
 }
 
 static void tcp_valid_rtt_meas(struct sock *sk, u32 seq_rtt)

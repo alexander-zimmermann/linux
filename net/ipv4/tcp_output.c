@@ -1850,7 +1850,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *to,
  * state updates are done by the caller.  Returns non-zero if an
  * error occurred which prevented the send.
  */
-int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
+int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int fast_rexmit)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1931,6 +1931,10 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
 
 		tp->total_retrans++;
+		if (fast_rexmit)
+			tp->total_fast_retrans++;
+		else
+			tp->total_rto_retrans++;
 
 #if FASTRETRANS_DEBUG > 0
 		if (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS) {
@@ -1992,7 +1996,7 @@ static int tcp_can_forward_retransmit(struct sock *sk)
  * based retransmit packet might feed us FACK information again.
  * If so, we use it to avoid unnecessarily retransmissions.
  */
-void tcp_xmit_retransmit_queue(struct sock *sk)
+void tcp_xmit_retransmit_queue(struct sock *sk, int fast_rexmit)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2068,7 +2072,7 @@ begin_fwd:
 		if (sacked & (TCPCB_SACKED_ACKED|TCPCB_SACKED_RETRANS))
 			continue;
 
-		if (tcp_retransmit_skb(sk, skb))
+		if (tcp_retransmit_skb(sk, skb, fast_rexmit))
 			return;
 		NET_INC_STATS_BH(sock_net(sk), mib_idx);
 
