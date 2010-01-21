@@ -76,7 +76,6 @@ int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
 int sysctl_tcp_sack __read_mostly = 1;
 int sysctl_tcp_fack __read_mostly = 1;
-int sysctl_tcp_reordering __read_mostly = TCP_FASTRETRANS_THRESH;
 int sysctl_tcp_ecn __read_mostly = 2;
 int sysctl_tcp_dsack __read_mostly = 1;
 int sysctl_tcp_app_win __read_mostly = 31;
@@ -967,6 +966,8 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 #endif
 		tcp_disable_fack(tp);
 	}
+	if (inet_csk(sk)->icsk_ro_ops->reorder_detected)
+		inet_csk(sk)->icsk_ro_ops->reorder_detected(sk, metric);
 }
 
 /* This must be called before lost_out is incremented */
@@ -1345,6 +1346,9 @@ static u8 tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 				tp->lost_out -= pcount;
 			}
 		}
+
+		if (inet_csk(sk)->icsk_ro_ops->new_sack)
+			inet_csk(sk)->icsk_ro_ops->new_sack(sk);
 
 		sacked |= TCPCB_SACKED_ACKED;
 		state->flag |= FLAG_DATA_SACKED;
@@ -2306,6 +2310,11 @@ static inline int tcp_dupack_heurestics(struct tcp_sock *tp)
 	return tcp_is_fack(tp) ? tp->fackets_out : tp->sacked_out + 1;
 }
 
+static u32 tcp_dupthresh(struct sock *sk)
+{
+	return inet_csk(sk)->icsk_ro_ops->dupthresh(sk);
+}
+
 static inline int tcp_skb_timedout(struct sock *sk, struct sk_buff *skb)
 {
 	return (tcp_time_stamp - TCP_SKB_CB(skb)->when > inet_csk(sk)->icsk_rto);
@@ -2426,13 +2435,13 @@ static int tcp_time_to_recover(struct sock *sk)
 		return 1;
 
 	/* Not-A-Trick#2 : Classic rule... */
-	if (tcp_dupack_heurestics(tp) > tp->reordering)
+	if (tcp_dupack_heurestics(tp) > tcp_dupthresh(sk))
 		return 1;
 
 	/* Trick#3 : when we use RFC2988 timer restart, fast
 	 * retransmit can be triggered by timeout of queue head.
 	 */
-	if (tcp_is_fack(tp) && tcp_head_timedout(sk))
+	if (tcp_is_fack(tp) && tcp_head_timedout(sk) && inet_csk(sk)->icsk_ro_ops->allow_head_to)
 		return 1;
 
 	/* Trick#4: It is still not OK... But will it be useful to delay
@@ -2812,7 +2821,8 @@ static void tcp_try_to_open(struct sock *sk, int flag)
 
 	if (inet_csk(sk)->icsk_ca_state != TCP_CA_CWR) {
 		tcp_try_keep_open(sk);
-		tcp_moderate_cwnd(tp);
+		if (inet_csk(sk)->icsk_ro_ops->allow_moderation)
+			tcp_moderate_cwnd(tp);
 	} else {
 		tcp_cwnd_down(sk, flag);
 	}
@@ -2919,6 +2929,9 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		tp->sacked_out = 0;
 	if (WARN_ON(!tp->sacked_out && tp->fackets_out))
 		tp->fackets_out = 0;
+
+	if (icsk->icsk_ro_ops->sm_starts)
+		icsk->icsk_ro_ops->sm_starts(sk, flag);
 
 	/* Now state machine starts.
 	 * A. ECE, hence prohibit cwnd undoing, the reduction is required. */
@@ -3050,7 +3063,10 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		if (icsk->icsk_ca_state < TCP_CA_CWR) {
 			if (!(flag & FLAG_ECE))
 				tp->prior_ssthresh = tcp_current_ssthresh(sk);
-			tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
+			if (unlikely(icsk->icsk_ro_ops->recovery_starts))
+				icsk->icsk_ro_ops->recovery_starts(sk, flag);
+			else
+				tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 			TCP_ECN_queue_cwr(tp);
 		}
 
@@ -3285,8 +3301,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			int delta;
 
 			/* Non-retransmitted hole got filled? That's reordering */
-			if (reord < prior_fackets)
+			if (reord < prior_fackets) {
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
+				if (icsk->icsk_ro_ops->sack_hole_filled)
+					icsk->icsk_ro_ops->sack_hole_filled(sk, flag);
+			}
 
 			delta = tcp_is_fack(tp) ? pkts_acked :
 						  prior_sacked - tp->sacked_out;
@@ -5474,6 +5493,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		tcp_init_metrics(sk);
 
 		tcp_init_congestion_control(sk);
+		tcp_init_reorder(sk);
 
 		/* Prevent spurious tcp_cwnd_restart() on first data
 		 * packet.
@@ -5717,6 +5737,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				tcp_init_metrics(sk);
 
 				tcp_init_congestion_control(sk);
+				tcp_init_reorder(sk);
 
 				/* Prevent spurious tcp_cwnd_restart() on
 				 * first data packet.

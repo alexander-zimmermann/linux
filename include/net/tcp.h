@@ -641,6 +641,55 @@ static inline int tcp_skb_mss(const struct sk_buff *skb)
 	return skb_shinfo(skb)->gso_size;
 }
 
+/*
+ * Interface for adding new TCP segment reordering handlers
+ */
+#define TCP_REORDER_NAME_MAX 16
+#define TCP_REORDER_MAX 128
+#define TCP_REORDER_BUF_MAX  (TCP_REORDER_NAME_MAX*TCP_REORDER_MAX)
+
+#define TCP_REORDER_NON_RESTRICTED 0x1
+
+struct tcp_reorder_ops {
+	struct list_head	list;
+	unsigned long flags;
+
+	/* initialize private data (optional) */
+	void (*init)(struct sock *sk);
+	/* cleanup private data  (optional) */
+	void (*release)(struct sock *sk);
+
+	/* return dupack threshold (required) */
+	u32 (*dupthresh)(struct sock *sk);
+	/* act on a new sack'ed segment (optional) */
+	void (*new_sack)(struct sock *sk);
+	/* act, if a non-retransmitted SACK hole was filled */
+	void (*sack_hole_filled)(struct sock *sk, int flag);
+	void (*sm_starts)(struct sock *sk, int flag);
+	void (*recovery_starts)(struct sock *sk, int flag);
+	void (*reorder_detected)(struct sock *sk, int length);
+	void (*rto_happened)(struct sock *sk);
+	int allow_moderation;
+	int allow_head_to;
+
+	char 		name[TCP_REORDER_NAME_MAX];
+	struct module	*owner;
+};
+
+extern int tcp_register_reorder(struct tcp_reorder_ops *ro);
+extern void tcp_unregister_reorder(struct tcp_reorder_ops *ro);
+extern void tcp_init_reorder(struct sock *sk);
+extern void tcp_cleanup_reorder(struct sock *sk);
+extern int tcp_set_default_reorder(const char *name);
+extern void tcp_get_default_reorder(char *name);
+extern void tcp_get_available_reorder(char *buf, size_t maxlen);
+extern void tcp_get_allowed_reorder(char *buf, size_t maxlen);
+extern int tcp_set_allowed_reorder(char *val);
+extern int tcp_set_reorder(struct sock *sk, const char *name);
+extern u32 tcp_native_dupthresh(struct sock *sk);
+extern struct tcp_reorder_ops tcp_init_reorder_ops;
+extern struct tcp_reorder_ops tcp_native;
+
 /* Events passed to congestion control interface */
 enum tcp_ca_event {
 	CA_EVENT_TX_START,	/* first transmit when no packets in flight */

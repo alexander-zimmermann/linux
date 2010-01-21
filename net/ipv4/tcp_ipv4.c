@@ -1776,6 +1776,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 
 	tp->reordering = sysctl_tcp_reordering;
 	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
+	icsk->icsk_ro_ops = &tcp_init_reorder_ops;
 
 	sk->sk_state = TCP_CLOSE;
 
@@ -1805,6 +1806,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 	tcp_clear_xmit_timers(sk);
 
 	tcp_cleanup_congestion_control(sk);
+	tcp_cleanup_reorder(sk);
 
 	/* Cleanup up the write buffer. */
 	tcp_write_queue_purge(sk);
