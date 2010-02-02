@@ -196,7 +196,8 @@ static u32 tcp_ancr_dupthresh(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
-	if (ro->elt_flag && tcp_ancr_test(sk))
+//	if (ro->elt_flag && tcp_ancr_test(sk))
+	if (tcp_ancr_test(sk))
 		return ro->dupthresh;
 
 	return tp->reordering;
