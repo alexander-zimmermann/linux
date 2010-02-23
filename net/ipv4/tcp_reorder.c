@@ -115,7 +115,7 @@ int tcp_set_default_reorder(const char *name)
 {
 	struct tcp_reorder_ops *ro;
 	int ret = -ENOENT;
-printk(KERN_NOTICE "tcp_set_default_reorder() called\n");
+
 	spin_lock(&tcp_reorder_list_lock);
 	ro = tcp_ro_find(name);
 #ifdef CONFIG_MODULES
@@ -240,7 +240,7 @@ int tcp_set_reorder(struct sock *sk, const char *name)
 	struct tcp_reorder_ops *ro;
 	struct native *ro_priv = inet_csk_ro(sk);
 	int err = 0;
-printk(KERN_NOTICE "tcp_set_reorder() called\n");
+
 	rcu_read_lock();
 	ro = tcp_ro_find(name);
 
@@ -269,7 +269,7 @@ printk(KERN_NOTICE "tcp_set_reorder() called\n");
 	else {
 		tcp_cleanup_reorder(sk);
 		icsk->icsk_ro_ops = ro;
-printk(KERN_NOTICE "Successfully initialized reorder module.\n");
+
 		if (sk->sk_state != TCP_CLOSE) {
 			if (icsk->icsk_ro_ops->init)
 				icsk->icsk_ro_ops->init(sk);

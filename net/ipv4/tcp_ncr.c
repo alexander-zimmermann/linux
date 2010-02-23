@@ -205,18 +205,18 @@ static void tcp_ncr_update_mode(struct sock *sk, int val) {
 }
 
 static struct tcp_reorder_ops tcp_ncr = {
-	.flags      = TCP_REORDER_NON_RESTRICTED,
-	.name       = "ncr",
-	.owner      = THIS_MODULE,
-	.init       = tcp_ncr_init,
-	.dupthresh  = tcp_ncr_dupthresh,
-	.new_sack   = tcp_ncr_new_sack,
+	.flags            = TCP_REORDER_NON_RESTRICTED,
+	.name             = "ncr",
+	.owner            = THIS_MODULE,
+	.init             = tcp_ncr_init,
+	.dupthresh        = tcp_ncr_dupthresh,
+	.new_sack         = tcp_ncr_new_sack,
 	.sack_hole_filled = tcp_ncr_sack_hole_filled,
-	.sm_starts  = tcp_ncr_sm_starts,
-	.recovery_starts = tcp_ncr_recovery_starts,
-	.update_mode= tcp_ncr_update_mode,
+	.sm_starts        = tcp_ncr_sm_starts,
+	.recovery_starts  = tcp_ncr_recovery_starts,
+	.update_mode      = tcp_ncr_update_mode,
 	.allow_moderation = 0,
-	.allow_head_to = 0,
+	.allow_head_to    = 0,
 };
 
 static int __init tcp_ncr_register(void)
