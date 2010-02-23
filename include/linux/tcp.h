@@ -97,6 +97,7 @@ enum {
 #define TCP_CONGESTION		13	/* Congestion control algorithm */
 #define TCP_MD5SIG		14	/* TCP MD5 Signature (RFC2385) */
 #define TCP_REORDER		15 /* Reordering Algorithm */
+#define TCP_REORDER_MODE		16	/* meaning of "mode" depends on reorder module */
 
 #define TCPI_OPT_TIMESTAMPS	1
 #define TCPI_OPT_SACK		2

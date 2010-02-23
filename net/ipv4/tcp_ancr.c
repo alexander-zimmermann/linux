@@ -18,12 +18,13 @@
 // copied from tcp_input.c
 #define FLAG_DATA_SACKED    0x20 // New SACK.
 
-static int mode = 1;
+/*static int mode = 1;
 module_param(mode, int, 0644);
-MODULE_PARM_DESC(mode, "mode: careful (1) or aggressive (2)");
+MODULE_PARM_DESC(mode, "mode: careful (1) or aggressive (2)");*/
 
 /* ancr variables */
 struct ancr {
+	u8  reorder_mode;
 	u8  elt_flag;
 	u32 dupthresh;
 	u32 prior_packets_out;
@@ -35,6 +36,8 @@ static inline void tcp_ancr_init(struct sock *sk)
 {
 	struct ancr *ro = inet_csk_ro(sk);
 
+	if (ro->reorder_mode != 2)
+		ro->reorder_mode = 1;
 	ro->elt_flag = 0;
 	ro->dupthresh = MIN_DUPTHRESH;
 	ro->prior_packets_out = 0;
@@ -174,7 +177,7 @@ static void tcp_ancr_elt(struct sock *sk)
 		ro->prior_packets_out - tcp_packets_in_flight(tp) :
 		0;
 		
-	if (mode == 1) {
+	if (ro->reorder_mode == 1) {
 		sent = tp->packets_out > ro->prior_packets_out ?
 			tp->packets_out - ro->prior_packets_out :
 			0;
@@ -245,6 +248,15 @@ static void tcp_ancr_recovery_starts(struct sock *sk, int flag)
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 }
 
+static void tcp_ancr_update_mode(struct sock *sk, int val) {
+	struct ancr *ro = inet_csk_ro(sk);
+
+	if (val == 2)
+		ro->reorder_mode = val;
+	else
+		ro->reorder_mode = 1;
+}
+
 static struct tcp_reorder_ops tcp_ancr = {
 	.flags            = TCP_REORDER_NON_RESTRICTED,
 	.name             = "ancr",
@@ -257,6 +269,7 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.recovery_starts  = tcp_ancr_recovery_starts,
 	.reorder_detected = tcp_ancr_reordering_detected,
 	.rto_happened     = tcp_ancr_rto_happened,
+	.update_mode      = tcp_ancr_update_mode,
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
 };
