@@ -13,6 +13,10 @@
 
 int sysctl_tcp_reordering __read_mostly = TCP_FASTRETRANS_THRESH;
 
+struct native {
+	u8 reorder_mode;
+};
+
 static DEFINE_SPINLOCK(tcp_reorder_list_lock);
 static LIST_HEAD(tcp_reorder_list);
 
@@ -234,6 +238,7 @@ int tcp_set_reorder(struct sock *sk, const char *name)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_reorder_ops *ro;
+	struct native *ro_priv = inet_csk_ro(sk);
 	int err = 0;
 printk(KERN_NOTICE "tcp_set_reorder() called\n");
 	rcu_read_lock();
@@ -265,8 +270,12 @@ printk(KERN_NOTICE "tcp_set_reorder() called\n");
 		tcp_cleanup_reorder(sk);
 		icsk->icsk_ro_ops = ro;
 printk(KERN_NOTICE "Successfully initialized reorder module.\n");
-		if (sk->sk_state != TCP_CLOSE && icsk->icsk_ro_ops->init)
-			icsk->icsk_ro_ops->init(sk);
+		if (sk->sk_state != TCP_CLOSE) {
+			if (icsk->icsk_ro_ops->init)
+				icsk->icsk_ro_ops->init(sk);
+			if (icsk->icsk_ro_ops->update_mode)
+				icsk->icsk_ro_ops->update_mode(sk, ro_priv->reorder_mode);
+		}
 	}
  out:
 	rcu_read_unlock();
@@ -283,11 +292,18 @@ u32 tcp_native_dupthresh(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(tcp_native_dupthresh);
 
+static void tcp_native_update_mode(struct sock *sk, int val) {
+	struct native *ro_priv = inet_csk_ro(sk);
+
+	ro_priv->reorder_mode = val;
+}
+
 struct tcp_reorder_ops tcp_native = {
 	.flags		= TCP_REORDER_NON_RESTRICTED,
 	.name		= "native",
 	.owner		= THIS_MODULE,
 	.dupthresh	= tcp_native_dupthresh,
+	.update_mode= tcp_native_update_mode,
 	.allow_moderation = 1,
 	.allow_head_to = 1,
 };
@@ -300,6 +316,7 @@ struct tcp_reorder_ops tcp_init_reorder_ops  = {
 	.name		= "",
 	.owner		= THIS_MODULE,
 	.dupthresh	= tcp_native_dupthresh,
+	.update_mode= tcp_native_update_mode,
 	.allow_moderation = 1,
 };
 EXPORT_SYMBOL_GPL(tcp_init_reorder_ops);

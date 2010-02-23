@@ -2084,6 +2084,11 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 	lock_sock(sk);
 
 	switch (optname) {
+	case TCP_REORDER_MODE:
+		if (icsk->icsk_ro_ops->update_mode)
+			icsk->icsk_ro_ops->update_mode(sk, val);
+		break;
+
 	case TCP_MAXSEG:
 		/* Values greater than interface MTU won't take effect. However
 		 * at the point when this call is done we typically don't yet
