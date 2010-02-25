@@ -41,13 +41,13 @@ int tcp_register_reorder(struct tcp_reorder_ops *ro)
 {
 	int ret = 0;
 
-	/* all algorithms must implement ssthresh and cong_avoid ops */
-/*	if (!ca->ssthresh || !ca->cong_avoid) {
+	/* all algorithms must implement certain ops */
+	if (!ro->dupthresh || !ro->update_mode) {
 		printk(KERN_ERR "TCP %s does not implement required ops\n",
-		       ca->name);
+		       ro->name);
 		return -EINVAL;
 	}
-*/
+
 	spin_lock(&tcp_reorder_list_lock);
 	if (tcp_ro_find(ro->name)) {
 		printk(KERN_NOTICE "TCP %s already registered\n", ro->name);

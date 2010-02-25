@@ -661,17 +661,25 @@ struct tcp_reorder_ops {
 
 	/* return dupack threshold (required) */
 	u32 (*dupthresh)(struct sock *sk);
-	/* act on a new sack'ed segment (optional) */
-	void (*new_sack)(struct sock *sk);
-	/* act, if a non-retransmitted SACK hole was filled */
-	void (*sack_hole_filled)(struct sock *sk, int flag);
-	void (*sm_starts)(struct sock *sk, int flag);
-	void (*recovery_starts)(struct sock *sk, int flag);
-	void (*reorder_detected)(struct sock *sk, int length);
-	void (*rto_happened)(struct sock *sk);
+	/* update the mode of operation (required) */
 	void (*update_mode)(struct sock *sk, int val);
+	/* allow cwnd moderation in disorder state [bool] (required) */
 	int allow_moderation;
+	/* allow head timeout to trigger fast recovery [bool] (required) */
 	int allow_head_to;
+
+	/* a new sack'ed segment (optional) */
+	void (*new_sack)(struct sock *sk);
+	/* a non-retransmitted SACK hole was filled (optional) */
+	void (*sack_hole_filled)(struct sock *sk, int flag);
+	/* state machine will start now (optional) */
+	void (*sm_starts)(struct sock *sk, int flag);
+	/* recovery phase starts (optional) */
+	void (*recovery_starts)(struct sock *sk, int flag);
+	/* reordering event with a certain degree was detected (optional) */
+	void (*reorder_detected)(struct sock *sk, int length);
+	/* a RTO timeout happened (optional) */
+	void (*rto_happened)(struct sock *sk);
 
 	char 		name[TCP_REORDER_NAME_MAX];
 	struct module	*owner;
