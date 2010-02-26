@@ -661,6 +661,7 @@ struct tcp_reorder_ops {
 
 	/* return dupack threshold (required) */
 	u32 (*dupthresh)(struct sock *sk);
+	u32 (*moddupthresh)(struct sock *sk);
 	/* update the mode of operation (required) */
 	void (*update_mode)(struct sock *sk, int val);
 	/* allow cwnd moderation in disorder state [bool] (required) */

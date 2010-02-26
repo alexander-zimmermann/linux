@@ -2328,6 +2328,8 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_total_retrans = tp->total_retrans;
 	info->tcpi_total_fast_retrans = tp->total_fast_retrans;
 	info->tcpi_total_rto_retrans = tp->total_rto_retrans;
+
+	info->tcpi_dupthresh = inet_csk(sk)->icsk_ro_ops->moddupthresh(sk);
 }
 
 EXPORT_SYMBOL_GPL(tcp_get_info);

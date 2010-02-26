@@ -272,6 +272,7 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.update_mode      = tcp_ancr_update_mode,
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
+	.moddupthresh     = tcp_ancr_dupthresh,
 };
 
 static int __init tcp_ancr_register(void)

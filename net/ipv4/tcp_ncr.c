@@ -119,7 +119,7 @@ static void tcp_ncr_elt(struct sock *sk)
 	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ?
 		ro->prior_packets_out - tcp_packets_in_flight(tp) :
 		0;
-		
+
 	if (ro->reorder_mode == 1) {
 		sent = tp->packets_out > ro->prior_packets_out ?
 			tp->packets_out - ro->prior_packets_out :
@@ -144,10 +144,16 @@ static u32 tcp_ncr_dupthresh(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
 
-	if (ro->elt_flag && tcp_ncr_test(sk))
+	if (ro->elt_flag && tcp_ncr_test(sk)) {
 		return ro->dupthresh;
-
+	}
 	return tp->reordering;
+}
+
+static u32 tcp_ncr_moddupthresh(struct sock *sk)
+{
+	struct ncr *ro = inet_csk_ro(sk);
+	return ro->dupthresh;
 }
 
 /* We received a SACK for a segment not previously SACK'ed */
@@ -217,6 +223,7 @@ static struct tcp_reorder_ops tcp_ncr = {
 	.update_mode      = tcp_ncr_update_mode,
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
+	.moddupthresh     = tcp_ncr_moddupthresh,
 };
 
 static int __init tcp_ncr_register(void)

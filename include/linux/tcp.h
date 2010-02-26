@@ -161,6 +161,7 @@ struct tcp_info
 	__u32	tcpi_total_retrans;
 	__u32	tcpi_total_fast_retrans;
 	__u32	tcpi_total_rto_retrans;
+	__u32	tcpi_dupthresh;
 };
 
 /* for TCP_MD5SIG socket option */

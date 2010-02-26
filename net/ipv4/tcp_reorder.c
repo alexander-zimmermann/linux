@@ -306,6 +306,7 @@ struct tcp_reorder_ops tcp_native = {
 	.update_mode= tcp_native_update_mode,
 	.allow_moderation = 1,
 	.allow_head_to = 1,
+	.moddupthresh = tcp_native_dupthresh,
 };
 
 /* Initial reordering algorithm used (until SYN)
@@ -318,5 +319,6 @@ struct tcp_reorder_ops tcp_init_reorder_ops  = {
 	.dupthresh	= tcp_native_dupthresh,
 	.update_mode= tcp_native_update_mode,
 	.allow_moderation = 1,
+	.moddupthresh = tcp_native_dupthresh,
 };
 EXPORT_SYMBOL_GPL(tcp_init_reorder_ops);
