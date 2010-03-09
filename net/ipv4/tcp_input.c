@@ -2324,6 +2324,9 @@ static inline int tcp_head_timedout(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	if (!inet_csk(sk)->icsk_ro_ops->allow_head_to)
+		return 0;
+
 	return tp->packets_out &&
 	       tcp_skb_timedout(sk, tcp_write_queue_head(sk));
 }
@@ -2441,7 +2444,7 @@ static int tcp_time_to_recover(struct sock *sk)
 	/* Trick#3 : when we use RFC2988 timer restart, fast
 	 * retransmit can be triggered by timeout of queue head.
 	 */
-	if (tcp_is_fack(tp) && tcp_head_timedout(sk) && inet_csk(sk)->icsk_ro_ops->allow_head_to)
+	if (tcp_is_fack(tp) && tcp_head_timedout(sk))
 		return 1;
 
 	/* Trick#4: It is still not OK... But will it be useful to delay
