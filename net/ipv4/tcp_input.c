@@ -937,7 +937,7 @@ reset:
 }
 
 static void tcp_update_reordering(struct sock *sk, const int metric,
-				  const int ts)
+				  const int ts, int real_reorder)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	if (metric > tp->reordering) {
@@ -966,7 +966,7 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 #endif
 		tcp_disable_fack(tp);
 	}
-	if (inet_csk(sk)->icsk_ro_ops->reorder_detected)
+	if (inet_csk(sk)->icsk_ro_ops->reorder_detected && real_reorder)
 		inet_csk(sk)->icsk_ro_ops->reorder_detected(sk, metric);
 }
 
@@ -1919,7 +1919,7 @@ advance_sp:
 	if ((state.reord < tp->fackets_out) &&
 	    ((icsk->icsk_ca_state != TCP_CA_Loss) || tp->undo_marker) &&
 	    (!tp->frto_highmark || after(tp->snd_una, tp->frto_highmark)))
-		tcp_update_reordering(sk, tp->fackets_out - state.reord, 0);
+		tcp_update_reordering(sk, tp->fackets_out - state.reord, 0, 1);
 
 out:
 
@@ -1957,7 +1957,7 @@ static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	if (tcp_limit_reno_sacked(tp))
-		tcp_update_reordering(sk, tp->packets_out + addend, 0);
+		tcp_update_reordering(sk, tp->packets_out + addend, 0, 1);
 }
 
 /* Emulate SACKs for SACKless connection: account for a new dupack. */
@@ -2732,20 +2732,20 @@ static void tcp_try_undo_dsack(struct sock *sk)
 
 /* Undo during fast recovery after partial ACK. */
 
-static int tcp_try_undo_partial(struct sock *sk, int acked)
+static int tcp_try_undo_partial(struct sock *sk, int acked, int real_reorder)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	/* Partial ACK arrived. Force Hoe's retransmit. */
 	int failed = tcp_is_reno(tp) || (tcp_fackets_out(tp) > tp->reordering);
 
 	if (tcp_may_undo(tp)) {
-		/* Plain luck! Hole if filled with delayed
+		/* Plain luck! Hole is filled with delayed
 		 * packet, rather than with a retransmit.
 		 */
 		if (tp->retrans_out == 0)
 			tp->retrans_stamp = 0;
 
-		tcp_update_reordering(sk, tcp_fackets_out(tp) + acked, 1);
+		tcp_update_reordering(sk, tcp_fackets_out(tp) + acked, 1, real_reorder);
 
 		DBGUNDO(sk, "Hoe");
 		tcp_undo_cwr(sk, 0);
@@ -3008,7 +3008,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 			if (tcp_is_reno(tp) && is_dupack)
 				tcp_add_reno_sack(sk);
 		} else
-			do_lost = tcp_try_undo_partial(sk, pkts_acked);
+			do_lost = tcp_try_undo_partial(sk, pkts_acked, flag & FLAG_RETRANS_DATA_ACKED);
 		break;
 	case TCP_CA_Loss:
 		if (flag & FLAG_DATA_ACKED)
@@ -3306,7 +3306,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 			/* Non-retransmitted hole got filled? That's reordering */
 			if (reord < prior_fackets) {
-				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
+				tcp_update_reordering(sk, tp->fackets_out - reord, 0, 1);
 				if (icsk->icsk_ro_ops->sack_hole_filled)
 					icsk->icsk_ro_ops->sack_hole_filled(sk, flag);
 			}

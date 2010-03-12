@@ -176,7 +176,7 @@ static void tcp_ancr_elt(struct sock *sk)
 	u32 room = ro->prior_packets_out > tcp_packets_in_flight(tp) ?
 		ro->prior_packets_out - tcp_packets_in_flight(tp) :
 		0;
-		
+
 	if (ro->reorder_mode == 1) {
 		sent = tp->packets_out > ro->prior_packets_out ?
 			tp->packets_out - ro->prior_packets_out :

@@ -32,18 +32,28 @@ struct ncr {
 	u32 prior_packets_out;
 };
 
+static void tcp_ncr_update_mode(struct sock *sk, int val)
+{
+	struct ncr *ro = inet_csk_ro(sk);
+
+	if (val == 2) {
+		ro->lt_f = 4;
+		ro->reorder_mode = val;
+	} else {
+		ro->lt_f = 3;
+		ro->reorder_mode = 1;
+	}
+}
+
 static inline void tcp_ncr_init(struct sock *sk)
 {
 	struct ncr *ro = inet_csk_ro(sk);
 
 	ro->elt_flag = 0;
 	ro->dupthresh = TCP_FASTRETRANS_THRESH;
-	if (ro->reorder_mode == 2) {
-		ro->lt_f = 4;
-	} else {
-		ro->lt_f = 3;
-		ro->reorder_mode = 1;
-	}
+
+	tcp_ncr_update_mode(sk, ro->reorder_mode);
+
 	ro->prior_packets_out = 0;
 }
 
@@ -65,7 +75,7 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
 
-	if (!how)
+	if (!how) //execute in I.1 but not in T.4
 		ro->prior_packets_out = tp->packets_out;
 	ro->elt_flag = 1;
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
@@ -86,7 +96,7 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int cumack)
 		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		if (flag & FLAG_DATA_SACKED)
-			tcp_ncr_elt_init(sk, 1);
+			tcp_ncr_elt_init(sk, 1); //T.4
 		else
 			ro->elt_flag = 0;
 	} else {
@@ -150,6 +160,10 @@ static u32 tcp_ncr_dupthresh(struct sock *sk)
 	return tp->reordering;
 }
 
+/* Return the dupthresh calculated by this module
+ * to show differences between calculated dupthresh
+ * and native dupthresh in flowgrind logs.
+ */
 static u32 tcp_ncr_moddupthresh(struct sock *sk)
 {
 	struct ncr *ro = inet_csk_ro(sk);
@@ -164,7 +178,7 @@ static void tcp_ncr_new_sack(struct sock *sk)
 
 	// only init ELT, if we're not already in ELT and this is the first SACK'ed segment
 	if (tcp_ncr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0))
-		tcp_ncr_elt_init(sk, 0);
+		tcp_ncr_elt_init(sk, 0); //I.1
 }
 
 /* A non-retransmitted SACK hole was filled */
@@ -196,18 +210,6 @@ static void tcp_ncr_recovery_starts(struct sock *sk, int flag)
 		tcp_ncr_elt_end(sk, flag, 0);
 	else
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
-}
-
-static void tcp_ncr_update_mode(struct sock *sk, int val) {
-	struct ncr *ro = inet_csk_ro(sk);
-
-	if (val == 2) {
-		ro->lt_f = 4;
-		ro->reorder_mode = val;
-	} else {
-		ro->lt_f = 3;
-		ro->reorder_mode = 1;
-	}
 }
 
 static struct tcp_reorder_ops tcp_ncr = {
