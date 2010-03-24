@@ -3,7 +3,7 @@
  *
  * Inspired by the paper
  * "Enhancing TCP Performance to Persistent Packet Reordering"
- * by Ka-Cheong leungma and Changming Ma
+ * by Ka-Cheong Leung and Changming Ma
  */
 
 #include <linux/mm.h>
