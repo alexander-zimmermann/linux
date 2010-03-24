@@ -656,9 +656,15 @@ config TCP_REORDER_ANCR
 	default n
 	---help---
 	TCP-ANCR improves the robustness of TCP to reordering.
-	It is based on TCP-NCR (http://tools.ietf.org/html/rfc4653), but
-	incorporates additional ideas inspired by RR-TCP
-	(http://www.icir.org/bkarp/RR-TCP/) and by this paper by Leung
+	It is based on TCP-NCR (http://tools.ietf.org/html/rfc4653)
+	and the native Linux behavior.
+
+config TCP_REORDER_LEUNGMA
+	tristate "TCP-LEUNGMA"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	TCP-LEUNGMA is based on this paper by Leung
 	and Ma (http://www.eee.hku.hk/~kcleung/papers/journals/
 	TCP_reordering:JCN_2005/JCN04-3-107.pdf)
 
@@ -675,6 +681,9 @@ choice
 	config DEFAULT_REORDER_ANCR
 		bool "ancr" if TCP_REORDER_ANCR=y
 
+	config DEFAULT_REORDER_LEUNGMA
+		bool "leungma" if TCP_REORDER_LEUNGMA=y
+
 	config DEFAULT_REORDER_NATIVE
 		bool "native"
 
@@ -686,5 +695,6 @@ config DEFAULT_TCP_REORDER
 	string
 	default "ncr" if DEFAULT_REORDER_NCR
 	default "ancr" if DEFAULT_REORDER_ANCR
+	default "leungma" if DEFAULT_REORDER_LEUNGMA
 	default "native"
 
