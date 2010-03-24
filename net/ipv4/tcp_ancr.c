@@ -57,10 +57,12 @@ static inline void tcp_ancr_init(struct sock *sk)
 static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 {
 	struct ancr *ro = inet_csk_ro(sk);
-	u32 dupthresh = 0;
+	u32 dupthresh = ro->dupthresh;
 	u16 aerr = 0;
 	u16 slength = length << FIXED_POINT_SHIFT;
 
+// we want to play with this, use BSD-styled code ;)
+#if 0
 	// on the first event, avg needs to be initialized properly
 	if (unlikely(!ro->rodist_avg && !ro->rodist_mdev)) {
 		ro->rodist_avg = slength;
@@ -75,6 +77,12 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 	// TODO: Try higher factors than 0.3 * mdev
 	//                            |    about 0.3 * mdev        |
 	dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
+#else
+	// we can't use tp->reordering, because it is reset to the sysctl value on RTOs.
+	// so, remember the largest measured reordering event ourselves.
+	if (length > dupthresh)
+		dupthresh = length;
+#endif
 
 	// apply bounds
 	ro->dupthresh = max_t(u32, dupthresh, MIN_DUPTHRESH);
@@ -187,9 +195,7 @@ static u32 tcp_ancr_dupthresh(struct sock *sk)
 	struct ancr *ro = inet_csk_ro(sk);
 
 	if (tcp_ancr_test(sk))
-		// TODO: Which is better?
 		return min_t(u32, ro->dupthresh, ro->dupthresh_bound);
-		//return min_t(u32, tp->reordering, ro->dupthresh_bound);
 
 	return tp->reordering;
 }
