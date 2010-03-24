@@ -1,9 +1,9 @@
 /*
- * TCP-ancr reordering response
+ * TCP-aNCR reordering response
  *
  * Inspired by ideas from TCP-NCR and the paper
  * "Enhancing TCP Performance to Persistent Packet Reordering"
- * by Ka-Cheong ancr and Changming Ma
+ * by Ka-Cheong Leung and Changming Ma
  */
 
 #include <linux/mm.h>
@@ -12,7 +12,7 @@
 
 #include <net/tcp.h>
 
-#define MIN_DUPTHRESH 3
+#define MIN_DUPTHRESH 2
 #define FIXED_POINT_SHIFT 8
 
 // copied from tcp_input.c
@@ -26,55 +26,40 @@ MODULE_PARM_DESC(mode, "mode: careful (1) or aggressive (2)");*/
 struct ancr {
 	u8  reorder_mode;
 	u8  elt_flag;
+	u8  lt_f;
 	u32 dupthresh;
+	u32 dupthresh_bound;
 	u32 prior_packets_out;
-	u32 rodist_avg;
-	u32 rodist_mdev;
+	u16 rodist_avg;
+	u16 rodist_mdev;
 };
 
 static inline void tcp_ancr_init(struct sock *sk)
 {
 	struct ancr *ro = inet_csk_ro(sk);
 
-	if (ro->reorder_mode != 2)
+	if (ro->reorder_mode == 2) {
+		ro->lt_f = 4;
+	} else {
+		ro->lt_f = 3;
 		ro->reorder_mode = 1;
+	}
 	ro->elt_flag = 0;
 	ro->dupthresh = MIN_DUPTHRESH;
+	ro->dupthresh_bound = TCP_MAX_REORDERING;
 	ro->prior_packets_out = 0;
 	ro->rodist_avg = 0;
 	ro->rodist_mdev = 0;
 }
 
-/* recalculate dupthresh
- */
-static void tcp_ancr_recalc_dupthresh(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct ancr *ro = inet_csk_ro(sk);
-
-	//                                |    about 0.3 * mdev         |
-	u32 dupthresh   = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
-
-	// FIXME: Who says rto/rtt is really >2 ???
-	// upper bound. srtt is the RTT-Value left-shifted by 3. So left-shift rto for a correct RTO/RTT ratio
-	//                                |      about 0.7 * rto / rtt                   |
-	u32 upper_bound = tp->snd_cwnd * (((45 * ((icsk->icsk_rto << 3) / tp->srtt)) >> 6) - 2);
-
-	// FIXME: see above
-	upper_bound = 256;
-
-	// apply bounds
-	ro->dupthresh = clamp_t(u32, dupthresh, MIN_DUPTHRESH, upper_bound);
-}
-
-/* New reordering event, recalculate avg and mdev
+/* New reordering event, recalculate avg and mdev (and dupthresh)
  */
 static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 {
 	struct ancr *ro = inet_csk_ro(sk);
-	u32 aerr = 0;
-	u32 slength = length << FIXED_POINT_SHIFT;
+	u32 dupthresh = 0;
+	u16 aerr = 0;
+	u16 slength = length << FIXED_POINT_SHIFT;
 
 	// on the first event, avg needs to be initialized properly
 	if (unlikely(!ro->rodist_avg && !ro->rodist_mdev)) {
@@ -87,13 +72,19 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 		ro->rodist_avg  = ((19 * slength) >> 6) + ((45 * ro->rodist_avg)  >> 6);
 	}
 
-	tcp_ancr_recalc_dupthresh(sk);
+	// TODO: Try higher factors than 0.3 * mdev
+	//                            |    about 0.3 * mdev        |
+	dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
+
+	// apply bounds
+	ro->dupthresh = max_t(u32, dupthresh, MIN_DUPTHRESH);
 }
 
 /* An RTO happened. We probably waited too long, reduce dupthresh by dumping components.
  * Only call on the first RTO for the same segment, because there's no way we could have
  * avoided a backed-off RTO by fast-retransmitting more quickly.
- */
+ *//*
+// Do nothing for now. RTO avoidance should be guaranteed by TCP-NCR's upper bound
 static void tcp_ancr_rto_happened(struct sock *sk)
 {
 	struct ancr *ro = inet_csk_ro(sk);
@@ -104,10 +95,9 @@ static void tcp_ancr_rto_happened(struct sock *sk)
 
 		tcp_ancr_recalc_dupthresh(sk);
 	}
-}
+} */
 
-/* TCP-ancr: Test if TCP-ancr may be used
- * (Following RFC 4653 recommendations)
+/* Test if TCP-ancr may be used
  */
 static int tcp_ancr_test(struct sock *sk)
 {
@@ -116,8 +106,7 @@ static int tcp_ancr_test(struct sock *sk)
 	return tcp_is_sack(tp) && !(tp->nonagle & TCP_NAGLE_OFF);
 }
 
-/* TCP-ancr: Initiate Extended Limited Transmit
- * (RFC 4653 Initialization)
+/* Initiate Extended Limited Transmit
  */
 static void tcp_ancr_elt_init(struct sock *sk, int how)
 {
@@ -127,42 +116,10 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 	if (!how)
 		ro->prior_packets_out = tp->packets_out;
 	ro->elt_flag = 1;
+	ro->dupthresh_bound = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), MIN_DUPTHRESH);
 }
 
-/* TCP-ancr Extended Limited Transmit
- * (RFC 4653 Termination)
- */
-static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
-{
-	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct ancr *ro = inet_csk_ro(sk);
-
-	if (cumack) {
-		/* New cumulative ACK during ELT, it is reordering. */
-		tp->snd_ssthresh = ro->prior_packets_out;
-		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
-		tp->snd_cwnd_stamp = tcp_time_stamp;
-		if (flag & FLAG_DATA_SACKED)
-			tcp_ancr_elt_init(sk, 1);
-		else
-			ro->elt_flag = 0;
-	} else {
-		/* Dupthresh is reached, start recovery */
-		// Don't force the RFC
-		//tp->snd_ssthresh = (ro->prior_packets_out/2);
-		//tp->snd_cwnd = tp->snd_ssthresh;
-		//tp->snd_cwnd_stamp = tcp_time_stamp;
-		// Instead, let the usual Linux recovery happen (with ratehalving)
-		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
-		tp->snd_cwnd_stamp = tcp_time_stamp;
-		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
-		ro->elt_flag = 0;
-	}
-}
-
-/* TCP-ancr: Extended Limited Transmit
- * (RFC 4653 Main Part)
+/* Extended Limited Transmit
  *
  * tcp_cwnd_down() is not meant to be used in the disorder phase. It is
  * implemented under assumptions only valid in the recovery phase.
@@ -188,6 +145,36 @@ static void tcp_ancr_elt(struct sock *sk)
 
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + min_t(u32, room, 3); // burst protection
 	tp->snd_cwnd_stamp = tcp_time_stamp;
+
+	ro->dupthresh_bound = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), MIN_DUPTHRESH);
+}
+
+/* Terminate Extended Limited Transmit
+ */
+static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct ancr *ro = inet_csk_ro(sk);
+
+
+	tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
+	tp->snd_cwnd_stamp = tcp_time_stamp;
+	if (cumack) {
+		/* New cumulative ACK during ELT, it is reordering.
+		 * Set ssthresh to previous state to allow slow starting
+		 * quickly back to the previous sending rate */
+		tp->snd_ssthresh = ro->prior_packets_out;
+		if (flag & FLAG_DATA_SACKED)
+			tcp_ancr_elt_init(sk, 1);
+		else
+			ro->elt_flag = 0;
+	} else {
+		/* Dupthresh is reached, start recovery, set ssthresh to an
+		 * appropriate value to start with ratehalving */
+		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
+		ro->elt_flag = 0;
+	}
 }
 
 /* Return the dupthresh.
@@ -199,9 +186,10 @@ static u32 tcp_ancr_dupthresh(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
-//	if (ro->elt_flag && tcp_ancr_test(sk))
 	if (tcp_ancr_test(sk))
-		return ro->dupthresh;
+		// TODO: Which is better?
+		return min_t(u32, ro->dupthresh, ro->dupthresh_bound);
+		//return min_t(u32, tp->reordering, ro->dupthresh_bound);
 
 	return tp->reordering;
 }
@@ -268,7 +256,7 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.sm_starts        = tcp_ancr_sm_starts,
 	.recovery_starts  = tcp_ancr_recovery_starts,
 	.reorder_detected = tcp_ancr_reordering_detected,
-	.rto_happened     = tcp_ancr_rto_happened,
+	//.rto_happened     = tcp_ancr_rto_happened, // disabled, see above
 	.update_mode      = tcp_ancr_update_mode,
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
