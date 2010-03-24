@@ -27,7 +27,7 @@ MODULE_PARM_DESC(mode, "mode: careful (1) or aggressive (2)"); */
 struct ncr {
 	u8  reorder_mode;
 	u8  elt_flag;
-	u8  dupthresh;
+	u32 dupthresh;
 	u8  lt_f;
 	u32 prior_packets_out;
 };
