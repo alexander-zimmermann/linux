@@ -170,9 +170,13 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 	if (cumack) {
 		/* New cumulative ACK during ELT, it is reordering.
-		 * Set ssthresh to previous state to allow slow starting
-		 * quickly back to the previous sending rate */
-		tp->snd_ssthresh = ro->prior_packets_out;
+		   The following condition will only be true, if we were previously in
+		   congestion avoidance. In that case, set ssthresh to allow slow
+		   starting quickly back to the previous operating point. Otherwise,
+		   don't touch ssthresh to allow slow start to continue to the point
+		   it was previously supposed to. */
+		if (tp->snd_ssthresh < ro->prior_packets_out)
+			tp->snd_ssthresh = ro->prior_packets_out;
 		if (flag & FLAG_DATA_SACKED)
 			tcp_ancr_elt_init(sk, 1);
 		else
