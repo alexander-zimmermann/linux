@@ -12,6 +12,13 @@
 
 #include <net/tcp.h>
 
+/* choose dupthresh calculation that should be compiled
+ * 1: Leung-Ma
+ * 2: max. tp->reordering throughout connection
+ * 3: based on reordering/congestion ratio
+ */
+#define DUP_CALC 2
+
 #define MIN_DUPTHRESH 2
 #define FIXED_POINT_SHIFT 8
 
@@ -52,17 +59,31 @@ static inline void tcp_ancr_init(struct sock *sk)
 	ro->rodist_mdev = 0;
 }
 
+#if DUP_CALC == 3
+/* calculates an EWMA of samples of two values:
+ * - value 1 means that a reordering event happened 
+ * - value 0 means that a congestion event happened */
+static void tcp_ancr_update_ratio(struct sock *sk, int reorder)
+{
+	// abuse rodist_avg for the EWMA of the congestion/reordering ratio
+
+}
+#endif
+
 /* New reordering event, recalculate avg and mdev (and dupthresh)
  */
 static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 {
 	struct ancr *ro = inet_csk_ro(sk);
 	u32 dupthresh = ro->dupthresh;
+#if DUP_CALC == 1
 	u16 aerr = 0;
 	u16 slength = length << FIXED_POINT_SHIFT;
+#endif
 
 // we want to play with this, use BSD-styled code ;)
-#if 0
+// First, Leung-Ma variants
+#if DUP_CALC == 1
 	// on the first event, avg needs to be initialized properly
 	if (unlikely(!ro->rodist_avg && !ro->rodist_mdev)) {
 		ro->rodist_avg = slength;
@@ -76,15 +97,29 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 
 	// TODO: Try higher factors than 0.3 * mdev
 	//                            |    about 0.3 * mdev        |
-	dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
-#else
+	//dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
+	dupthresh = (ro->rodist_avg + ro->rodist_mdev) >> FIXED_POINT_SHIFT;
+#endif
+
+// second, maximum always
+#if DUP_CALC == 2
 	// we can't use tp->reordering, because it is reset to the sysctl value on RTOs.
 	// so, remember the largest measured reordering event ourselves.
 	if (length > dupthresh)
 		dupthresh = length;
 #endif
 
-	// apply bounds
+// third, depending on congestion/reordering ratio estimate
+#if DUP_CALC == 3
+	// abuse rodist_mdev for the maximum observed reordering length
+	// abuse rodist_avg  for the EWMA of the congestion/reordering ratio
+	if (length > ro->rodist_mdev)
+		ro->rodist_mdev = length;
+	tcp_ancr_update_ratio(sk, 1);
+	ro->dupthresh = (ro->rodist_mdev * ro->rodist_avg) >> FIXED_POINT_SHIFT;
+#endif
+
+	// apply lower bound
 	ro->dupthresh = max_t(u32, dupthresh, MIN_DUPTHRESH);
 }
 
