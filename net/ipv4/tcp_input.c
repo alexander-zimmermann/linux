@@ -3086,7 +3086,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 	if (do_lost || (tcp_is_fack(tp) && tcp_head_timedout(sk)))
 		tcp_update_scoreboard(sk, fast_rexmit);
 	tcp_cwnd_down(sk, flag);
-	tcp_xmit_retransmit_queue(sk, fast_rexmit);
+	tcp_xmit_retransmit_queue(sk, 1);
 }
 
 static void tcp_valid_rtt_meas(struct sock *sk, u32 seq_rtt)
