@@ -139,7 +139,7 @@ static void tcp_ncr_elt(struct sock *sk)
 			0;
 	}
 
-	tp->snd_cwnd = tcp_packets_in_flight(tp) + min_t(u32, room, 3); // burst protection
+	tp->snd_cwnd = tcp_packets_in_flight(tp) + room;
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
