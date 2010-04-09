@@ -66,7 +66,7 @@ static inline void tcp_ancr_init(struct sock *sk)
 static void tcp_ancr_update_ratio(struct sock *sk, int reorder)
 {
 	// abuse rodist_avg for the EWMA of the congestion/reordering ratio
-
+	// remember to << FIXED_POINT_SHIFT
 }
 #endif
 
@@ -76,14 +76,12 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 {
 	struct ancr *ro = inet_csk_ro(sk);
 	u32 dupthresh = ro->dupthresh;
-#if DUP_CALC == 1
-	u16 aerr = 0;
-	u16 slength = length << FIXED_POINT_SHIFT;
-#endif
-
 // we want to play with this, use BSD-styled code ;)
 // First, Leung-Ma variants
 #if DUP_CALC == 1
+	u16 aerr = 0;
+	u16 slength = length << FIXED_POINT_SHIFT;
+
 	// on the first event, avg needs to be initialized properly
 	if (unlikely(!ro->rodist_avg && !ro->rodist_mdev)) {
 		ro->rodist_avg = slength;
@@ -95,10 +93,8 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 		ro->rodist_avg  = ((19 * slength) >> 6) + ((45 * ro->rodist_avg)  >> 6);
 	}
 
-	// TODO: Try higher factors than 0.3 * mdev
 	//                            |    about 0.3 * mdev        |
-	//dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
-	dupthresh = (ro->rodist_avg + ro->rodist_mdev) >> FIXED_POINT_SHIFT;
+	dupthresh = (ro->rodist_avg + ((19 * ro->rodist_mdev) >> 6)) >> FIXED_POINT_SHIFT;
 #endif
 
 // second, maximum always
@@ -122,23 +118,6 @@ static void tcp_ancr_reordering_detected(struct sock *sk, int length)
 	// apply lower bound
 	ro->dupthresh = max_t(u32, dupthresh, MIN_DUPTHRESH);
 }
-
-/* An RTO happened. We probably waited too long, reduce dupthresh by dumping components.
- * Only call on the first RTO for the same segment, because there's no way we could have
- * avoided a backed-off RTO by fast-retransmitting more quickly.
- *//*
-// Do nothing for now. RTO avoidance should be guaranteed by TCP-NCR's upper bound
-static void tcp_ancr_rto_happened(struct sock *sk)
-{
-	struct ancr *ro = inet_csk_ro(sk);
-
-	if (inet_csk(sk)->icsk_retransmits == 0) {
-		ro->rodist_avg  = ro->rodist_avg >> 1;
-		ro->rodist_mdev = ro->rodist_mdev >> 2;
-
-		tcp_ancr_recalc_dupthresh(sk);
-	}
-} */
 
 /* Test if TCP-ancr may be used
  */
@@ -301,7 +280,6 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.sm_starts        = tcp_ancr_sm_starts,
 	.recovery_starts  = tcp_ancr_recovery_starts,
 	.reorder_detected = tcp_ancr_reordering_detected,
-	//.rto_happened     = tcp_ancr_rto_happened, // disabled, see above
 	.update_mode      = tcp_ancr_update_mode,
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
