@@ -51,6 +51,7 @@ obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
 obj-$(CONFIG_TCP_REORDER_NCR) += tcp_ncr.o
 obj-$(CONFIG_TCP_REORDER_ANCR) += tcp_ancr.o
 obj-$(CONFIG_TCP_REORDER_LEUNGMA) += tcp_leungma.o
+#obj-$(CONFIG_TCP_REORDER_NONE) += tcp_noreor.o
 obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
 
 obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
