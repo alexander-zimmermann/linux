@@ -1988,6 +1988,43 @@ static int tcp_can_forward_retransmit(struct sock *sk)
 	return 1;
 }
 
+static void print_queue(struct sock *sk, struct sk_buff *old, struct sk_buff *hole)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sk_buff *skb, *prev;
+
+	skb = tcp_write_queue_head(sk);
+	prev = (struct sk_buff *)(&sk->sk_write_queue);
+
+	if (skb == NULL) {
+		printk("NULL head, pkts %u\n", tp->packets_out);
+		return;
+	}
+	printk("head %p tail %p sendhead %p oldhint %p now %p hole %p high %u\n",
+	       tcp_write_queue_head(sk), tcp_write_queue_tail(sk),
+	       tcp_send_head(sk), old, tp->retransmit_skb_hint, hole,
+	       tp->retransmit_high);
+
+	while (skb) {
+		printk("skb %p (%u-%u) next %p prev %p sacked %u\n",
+		       skb, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq,
+		       skb->next, skb->prev, TCP_SKB_CB(skb)->sacked);
+		if (prev != skb->prev)
+			printk("Inconsistent prev\n");
+
+		if (skb == tcp_write_queue_tail(sk)) {
+			if (skb->next != (struct sk_buff *)(&sk->sk_write_queue))
+				printk("Improper next at tail\n");
+			return;
+		}
+
+		prev = skb;
+		skb = skb->next;
+	}
+	printk("Encountered unexpected NULL\n");
+}
+
+
 /* This gets called after a retransmit timeout, and the initially
  * retransmitted data is acknowledged.  It tries to continue
  * resending the rest of the retransmit queue, until either
@@ -1996,15 +2033,21 @@ static int tcp_can_forward_retransmit(struct sock *sk)
  * based retransmit packet might feed us FACK information again.
  * If so, we use it to avoid unnecessarily retransmissions.
  */
+static int caught_it = 0;
+
 void tcp_xmit_retransmit_queue(struct sock *sk, int fast_rexmit)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
 	struct sk_buff *hole = NULL;
+	struct sk_buff *old = tp->retransmit_skb_hint;
 	u32 last_lost;
 	int mib_idx;
 	int fwd_rexmitting = 0;
+
+	if (!tp->packets_out)
+		return;
 
 	if (!tp->lost_out)
 		tp->retransmit_high = tp->snd_una;
@@ -2018,6 +2061,17 @@ void tcp_xmit_retransmit_queue(struct sock *sk, int fast_rexmit)
 		skb = tcp_write_queue_head(sk);
 		last_lost = tp->snd_una;
 	}
+
+checknull:
+	if (skb == NULL) {
+		if (!caught_it)
+			print_queue(sk, old, hole);
+		caught_it++;
+		if (net_ratelimit())
+			printk("Errors caught so far %u\n", caught_it);
+		return;
+	}
+
 
 	tcp_for_write_queue_from(skb, sk) {
 		__u8 sacked = TCP_SKB_CB(skb)->sacked;
@@ -2059,7 +2113,8 @@ begin_fwd:
 		} else if (!(sacked & TCPCB_LOST)) {
 			if (hole == NULL && !(sacked & (TCPCB_SACKED_RETRANS|TCPCB_SACKED_ACKED)))
 				hole = skb;
-			continue;
+			//continue;
+			goto cont;
 
 		} else {
 			last_lost = TCP_SKB_CB(skb)->end_seq;
@@ -2070,7 +2125,8 @@ begin_fwd:
 		}
 
 		if (sacked & (TCPCB_SACKED_ACKED|TCPCB_SACKED_RETRANS))
-			continue;
+			//continue;
+			goto cont;
 
 		if (tcp_retransmit_skb(sk, skb, fast_rexmit))
 			return;
@@ -2080,6 +2136,9 @@ begin_fwd:
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 						  inet_csk(sk)->icsk_rto,
 						  TCP_RTO_MAX);
+cont:
+		skb = skb->next;
+		goto checknull;
 	}
 }
 
