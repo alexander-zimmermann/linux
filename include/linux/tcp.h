@@ -249,6 +249,12 @@ static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)
 	return (struct tcp_request_sock *)req;
 }
 
+struct reorder_sample {
+    struct list_head list;
+    u32 seq;
+    int sample;
+};
+
 struct tcp_sock {
 	/* inet_connection_sock has to be the first member of tcp_sock */
 	struct inet_connection_sock	inet_conn;
@@ -385,6 +391,9 @@ struct tcp_sock {
 	unsigned int		keepalive_intvl;  /* time interval between keep alive probes */
 
 	int			linger2;
+
+/* List to store reordering samples */
+	struct list_head reorder_samples;
 
 /* Receiver side RTT estimation */
 	struct {

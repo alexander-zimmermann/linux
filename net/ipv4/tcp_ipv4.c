@@ -1778,6 +1778,8 @@ static int tcp_v4_init_sock(struct sock *sk)
 	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
 	icsk->icsk_ro_ops = &tcp_init_reorder_ops;
 
+	INIT_LIST_HEAD(&tp->reorder_samples);
+
 	sk->sk_state = TCP_CLOSE;
 
 	sk->sk_write_space = sk_stream_write_space;
@@ -1796,12 +1798,25 @@ static int tcp_v4_init_sock(struct sock *sk)
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
 
+
 	return 0;
 }
 
 void tcp_v4_destroy_sock(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+
+	struct reorder_sample *tmp;
+	struct list_head *pos, *q;
+	//printk(KERN_EMERG "%s() %08x %08x\n", __func__, sk, tp->reorder_samples.next);
+	/* Clean reorder samples */
+	if (tp->reorder_samples.next) {
+		list_for_each_safe(pos, q, &tp->reorder_samples) {
+			tmp = list_entry(pos, struct reorder_sample, list);
+			list_del(pos);
+			kfree(tmp);
+		}
+	}
 
 	tcp_clear_xmit_timers(sk);
 
