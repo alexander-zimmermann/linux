@@ -250,9 +250,10 @@ static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)
 }
 
 struct reorder_sample {
-    struct list_head list;
-    u32 seq;
-    int sample;
+	struct list_head list;
+	u32 seq;
+	int factor;
+	int sample;
 };
 
 struct tcp_sock {
@@ -335,14 +336,14 @@ struct tcp_sock {
 /*
  *	Slow start and congestion control (see also Nagle, and Karn & Partridge)
  */
- 	u32	snd_ssthresh;	/* Slow start size threshold		*/
- 	u32	snd_cwnd;	/* Sending congestion window		*/
+	u32	snd_ssthresh;	/* Slow start size threshold		*/
+	u32	snd_cwnd;	/* Sending congestion window		*/
 	u32	snd_cwnd_cnt;	/* Linear increase counter		*/
 	u32	snd_cwnd_clamp; /* Do not allow snd_cwnd to grow above this */
 	u32	snd_cwnd_used;
 	u32	snd_cwnd_stamp;
 
- 	u32	rcv_wnd;	/* Current receiver window		*/
+	u32	rcv_wnd;	/* Current receiver window		*/
 	u32	write_seq;	/* Tail(+1) of data held in tcp send buffer */
 	u32	pushed_seq;	/* Last pushed seq, required to talk to windows */
 	u32	lost_out;	/* Lost packets			*/
@@ -394,6 +395,9 @@ struct tcp_sock {
 
 /* List to store reordering samples */
 	struct list_head reorder_samples;
+
+/* packets_out on entering disorder state */
+	unsigned int prior_packets_out;
 
 /* Receiver side RTT estimation */
 	struct {

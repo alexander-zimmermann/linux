@@ -679,6 +679,8 @@ struct tcp_reorder_ops {
 	void (*recovery_starts)(struct sock *sk, int flag);
 	/* reordering event with a certain degree was detected (optional) */
 	void (*reorder_detected)(struct sock *sk, int length);
+	/* reordering event with a certain factor was detected (optional) */
+	void (*reorder_detected_factor)(struct sock *sk, int factor);
 	/* a RTO timeout happened (optional) */
 	void (*rto_happened)(struct sock *sk);
 

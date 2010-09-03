@@ -990,6 +990,11 @@ static void tcp_save_sample(int sample, struct sock *sk, struct sk_buff *skb)
 	rs = (struct reorder_sample *)kmalloc(sizeof(struct reorder_sample), GFP_KERNEL);
 
 	rs->sample = sample;
+	printk(KERN_INFO "prior_packets_out = %u", tp->prior_packets_out);
+	if (tp->prior_packets_out > 0)
+		rs->factor = (sample << 8)/tp->prior_packets_out;
+	else
+		rs->factor = 0;
 	rs->seq = TCP_SKB_CB(skb)->seq;
 
 	list_add_tail(&rs->list, &tp->reorder_samples);
@@ -1008,8 +1013,14 @@ static void tcp_deliver_sample(u32 seq, struct sock *sk)
 	list_for_each(lh, &tp->reorder_samples) {
 		entry = list_entry(lh, struct reorder_sample, list);
 		if (entry->seq == seq) {
-			printk(KERN_INFO "DSACK -> sample: %u, seqno: %u\n", entry->sample, seq);
+			//printk(KERN_INFO "DSACK -> sample: %u, seqno: %u\n", entry->sample, seq);
 			tcp_update_reordering(sk, entry->sample, 0, 1);
+
+			if (inet_csk(sk)->icsk_ro_ops->reorder_detected_factor) {
+				printk(KERN_INFO "DSACK -> sample: %u, seqno: %u, factor: %u\n", entry->sample, seq, entry->factor);
+				inet_csk(sk)->icsk_ro_ops->reorder_detected_factor(sk, entry->factor);
+			}
+
 			break;
 		}
 	}
@@ -2865,6 +2876,10 @@ static void tcp_try_keep_open(struct sock *sk)
 		state = TCP_CA_Disorder;
 
 	if (inet_csk(sk)->icsk_ca_state != state) {
+		/* Save packets_out on entering disorder state */
+		if (state == TCP_CA_Disorder)
+			tp->prior_packets_out = tp->packets_out;
+
 		tcp_set_ca_state(sk, state);
 		tp->high_seq = tp->snd_nxt;
 	}
