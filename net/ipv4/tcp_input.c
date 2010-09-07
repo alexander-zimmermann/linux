@@ -1014,13 +1014,11 @@ static void tcp_deliver_sample(u32 seq, struct sock *sk)
 		entry = list_entry(lh, struct reorder_sample, list);
 		if (entry->seq == seq) {
 			//printk(KERN_INFO "DSACK -> sample: %u, seqno: %u\n", entry->sample, seq);
-			tcp_update_reordering(sk, entry->sample, 0, 1);
-
+			//tcp_update_reordering(sk, entry->sample, 0, 1);
 			if (inet_csk(sk)->icsk_ro_ops->reorder_detected_factor) {
 				printk(KERN_INFO "DSACK -> sample: %u, seqno: %u, factor: %u\n", entry->sample, seq, entry->factor);
 				inet_csk(sk)->icsk_ro_ops->reorder_detected_factor(sk, entry->factor);
 			}
-
 			break;
 		}
 	}
