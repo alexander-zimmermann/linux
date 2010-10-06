@@ -240,6 +240,13 @@ static void tcp_ancr_update_mode(struct sock *sk, int val) {
 		ro->reorder_mode = 1;
 }
 
+static void tcp_ancr_rto_happened(struct sock *sk)
+{
+	struct ancr *ro = inet_csk_ro(sk);
+	ro->elt_flag = 0;
+	ro->max_factor = 0;
+}
+
 static struct tcp_reorder_ops tcp_ancr = {
 	.flags            = TCP_REORDER_NON_RESTRICTED,
 	.name             = "ancr",
@@ -256,6 +263,7 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
 	.moddupthresh     = tcp_ancr_dupthresh,
+	.rto_happened	  = tcp_ancr_rto_happened,
 };
 
 static int __init tcp_ancr_register(void)
