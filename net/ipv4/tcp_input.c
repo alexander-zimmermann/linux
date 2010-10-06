@@ -974,6 +974,9 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 	}
 	if (inet_csk(sk)->icsk_ro_ops->reorder_detected && real_reorder)
 		inet_csk(sk)->icsk_ro_ops->reorder_detected(sk, metric);
+
+	if (inet_csk(sk)->icsk_ro_ops->reorder_detected_factor)
+		inet_csk(sk)->icsk_ro_ops->reorder_detected_factor(sk, ((metric << 8)/tp->prior_packets_out) + 1);
 }
 
 /* Save reordering samples for retransmitted segments
@@ -992,7 +995,7 @@ static void tcp_save_sample(int sample, struct sock *sk, struct sk_buff *skb)
 	rs->sample = sample;
 	printk(KERN_INFO "prior_packets_out = %u", tp->prior_packets_out);
 	if (tp->prior_packets_out > 0)
-		rs->factor = (sample << 8)/tp->prior_packets_out;
+		rs->factor = ((sample << 8)/tp->prior_packets_out) + 1; //round up
 	else
 		rs->factor = 0;
 	rs->seq = TCP_SKB_CB(skb)->seq;
