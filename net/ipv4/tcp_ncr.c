@@ -212,6 +212,12 @@ static void tcp_ncr_recovery_starts(struct sock *sk, int flag)
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
 }
 
+static void tcp_ncr_rto_happened(struct sock *sk)
+{
+	struct ncr *ro = inet_csk_ro(sk);
+	ro->elt_flag = 0;
+}
+
 static struct tcp_reorder_ops tcp_ncr = {
 	.flags            = TCP_REORDER_NON_RESTRICTED,
 	.name             = "ncr",
@@ -226,6 +232,7 @@ static struct tcp_reorder_ops tcp_ncr = {
 	.allow_moderation = 0,
 	.allow_head_to    = 0,
 	.moddupthresh     = tcp_ncr_moddupthresh,
+	.rto_happened	  = tcp_ncr_rto_happened,
 };
 
 static int __init tcp_ncr_register(void)
