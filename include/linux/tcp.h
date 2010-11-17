@@ -158,6 +158,7 @@ struct tcp_info
 	__u32	tcpi_rcv_space;
 
 	__u32	tcpi_total_retrans;
+	__u32	tcpi_lcd_reverts;
 };
 
 /* for TCP_MD5SIG socket option */
@@ -318,6 +319,7 @@ struct tcp_sock {
 
 	u8	keepalive_probes; /* num of allowed keep alive probes	*/
 	u8	lcdactive;	/* Enable LCD algorithm?		*/
+	u32	lcd_reverts;	/* Reverts of RTO backoffs during one RTO-phase */
 /*
  *      Options received (usually on last packet, some only on SYN packets).
  */

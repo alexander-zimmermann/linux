@@ -2350,6 +2350,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_rcv_space = tp->rcvq_space.space;
 
 	info->tcpi_total_retrans = tp->total_retrans;
+	info->tcpi_lcd_reverts = tp->lcd_reverts;
 }
 
 EXPORT_SYMBOL_GPL(tcp_get_info);

@@ -2767,6 +2767,7 @@ static int tcp_try_undo_loss(struct sock *sk)
 		tcp_undo_cwr(sk, 1);
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPLOSSUNDO);
 		inet_csk(sk)->icsk_retransmits = 0;
+		tp->lcd_reverts = 0;
 		tp->undo_marker = 0;
 		if (tcp_is_sack(tp))
 			tcp_set_ca_state(sk, TCP_CA_Open);
@@ -2949,6 +2950,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		switch (icsk->icsk_ca_state) {
 		case TCP_CA_Loss:
 			icsk->icsk_retransmits = 0;
+			tp->lcd_reverts = 0;
 			if (tcp_try_undo_recovery(sk))
 				return;
 			break;
@@ -2993,8 +2995,10 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 			do_lost = tcp_try_undo_partial(sk, pkts_acked);
 		break;
 	case TCP_CA_Loss:
-		if (flag & FLAG_DATA_ACKED)
+		if (flag & FLAG_DATA_ACKED) {
 			icsk->icsk_retransmits = 0;
+			tp->lcd_reverts = 0;
+		}
 		if (tcp_is_reno(tp) && flag & FLAG_SND_UNA_ADVANCED)
 			tcp_reset_reno_sack(tp);
 		if (!tcp_try_undo_loss(sk)) {
@@ -3489,8 +3493,10 @@ static int tcp_process_frto(struct sock *sk, int flag)
 	tcp_verify_left_out(tp);
 
 	/* Duplicate the behavior from Loss state (fastretrans_alert) */
-	if (flag & FLAG_DATA_ACKED)
+	if (flag & FLAG_DATA_ACKED) {
 		inet_csk(sk)->icsk_retransmits = 0;
+		tp->lcd_reverts = 0;
+	}
 
 	if ((flag & FLAG_NONHEAD_RETRANS_ACKED) ||
 	    ((tp->frto_counter >= 2) && (flag & FLAG_RETRANS_DATA_ACKED)))
