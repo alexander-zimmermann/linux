@@ -396,6 +396,9 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			goto out;
 		}
 
+		if (!tp->lcdactive)
+			break;
+
 		err = icmp_err_convert[code].errno;
 		/* check if icmp_skb allows revert of backoff
 		 * (see draft-zimmermann-tcp-lcd) */

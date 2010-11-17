@@ -2249,6 +2249,12 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		err = tp->af_specific->md5_parse(sk, optval, optlen);
 		break;
 #endif
+	case TCP_LCD:
+		if (val < 0 || val > 1)
+			err = -EINVAL;
+		else
+			tp->lcdactive = val;
+		break;
 
 	default:
 		err = -ENOPROTOOPT;
@@ -2427,6 +2433,11 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (copy_to_user(optval, icsk->icsk_ca_ops->name, len))
 			return -EFAULT;
 		return 0;
+
+	case TCP_LCD:
+		val = tp->lcdactive;
+		return 0;
+
 	default:
 		return -ENOPROTOOPT;
 	}
