@@ -29,7 +29,6 @@ struct ancr {
 	u8  lt_f;
 	u32 dupthresh;
 	u32 max_factor;
-	u32 cpo;
 };
 
 static inline void tcp_ancr_init(struct sock *sk)
@@ -45,7 +44,6 @@ static inline void tcp_ancr_init(struct sock *sk)
 	ro->elt_flag = 0;
 	ro->dupthresh = MIN_DUPTHRESH;
 	ro->max_factor = 0;
-	ro->cpo = 0;
 }
 
 static void tcp_ancr_reorder_detected(struct sock *sk, int sample)
@@ -95,21 +93,20 @@ static void tcp_ancr_calc_dupthresh(struct sock *sk)
 	 * dupthresh, since it would never retransmit if no new packets would be
 	 * send during elt.
 	 */
-	u32 new = (ro->max_factor * ro->cpo) >> FIXED_POINT_SHIFT;
-	u32 ncr = (2 * tp->packets_out)/ro->lt_f;
+	//u32 new = (ro->max_factor * ro->prior_packets_out) >> FIXED_POINT_SHIFT;
+	//u32 ncr = (2 * tp->packets_out)/ro->lt_f;
 
-	/*if (ro->max_factor == 0) {
+	if (ro->max_factor == 0) {
 		ro->dupthresh = 3;
-		printk(KERN_INFO "return 3");
+		//printk(KERN_INFO "return 3");
 		return;
-	}*/
+	}
 
-	//u32 new_fac = ((2 << 16)/ro->max_factor);
+	u32 new_fac = ((2 << 16)/ro->max_factor);
 	//printk(KERN_DEBUG "max_f = %u, new_fac = %u", ro->max_factor,new_fac);
-	//u32 new = (((2*tp->packets_out) << 8) / (new_fac + (1 << 8))) + 1;
-	//printk(KERN_INFO "calc_dupthresh: factor=%u, new=%u, po=%u, cpo=%u", ro->max_factor, new, tp->packets_out, ro->cpo);
+	ro->dupthresh = (((2*tp->packets_out) << 8) / (new_fac + (1 << 8))) + 1;
 
-	ro->dupthresh = min_t(u32, new, ncr);
+	//ro->dupthresh = min_t(u32, new, ncr);
 	ro->dupthresh = max_t(u32, ro->dupthresh, MIN_DUPTHRESH);
 }
 
@@ -125,7 +122,6 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 		//printk(KERN_INFO "ppo=%u", tp->packets_out);
 		tp->prior_packets_out = tp->packets_out;
 	}
-	ro->cpo = tp->packets_out;
 	ro->elt_flag = 1;
 	tcp_ancr_calc_dupthresh(sk);
 }
@@ -241,7 +237,7 @@ static void tcp_ancr_sack_hole_filled(struct sock *sk, int flag)
 }
 
 /* the state machine will start right after this */
-static void tcp_ancr_sm_starts(struct sock *sk, int flag)
+static void tcp_ancr_sm_starts(struct sock *sk, int flag, int acked)
 {
 	struct ancr *ro = inet_csk_ro(sk);
 	struct tcp_sock *tp = tcp_sk(sk);

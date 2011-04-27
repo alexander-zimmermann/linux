@@ -192,9 +192,10 @@ static void tcp_ncr_new_sack(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	// only init ELT, if we're not already in ELT and this is the first SACK'ed segment
-	if (tcp_ncr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0))
+	if (tcp_ncr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0) && (icsk->icsk_ca_state < TCP_CA_CWR))
 		tcp_ncr_elt_init(sk, 0); //I.1
 }
 
