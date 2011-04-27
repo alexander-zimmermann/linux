@@ -3047,7 +3047,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked, int flag)
 		tp->fackets_out = 0;
 
 	if (icsk->icsk_ro_ops->sm_starts)
-		icsk->icsk_ro_ops->sm_starts(sk, flag);
+		icsk->icsk_ro_ops->sm_starts(sk, flag, pkts_acked);
 
 	/* Now state machine starts.
 	 * A. ECE, hence prohibit cwnd undoing, the reduction is required. */

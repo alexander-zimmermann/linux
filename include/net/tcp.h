@@ -674,7 +674,7 @@ struct tcp_reorder_ops {
 	/* a non-retransmitted SACK hole was filled (optional) */
 	void (*sack_hole_filled)(struct sock *sk, int flag);
 	/* state machine will start now (optional) */
-	void (*sm_starts)(struct sock *sk, int flag);
+	void (*sm_starts)(struct sock *sk, int flag, int acked);
 	/* recovery phase starts (optional) */
 	void (*recovery_starts)(struct sock *sk, int flag);
 	void (*recovery_ends)(struct sock *sk, int flag);

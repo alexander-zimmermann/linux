@@ -30,6 +30,7 @@ struct ncr {
 	u32 dupthresh;
 	u8  lt_f;
 	u32 prior_packets_out;
+	u32 acked;
 };
 
 static void tcp_ncr_update_mode(struct sock *sk, int val)
@@ -55,6 +56,8 @@ static inline void tcp_ncr_init(struct sock *sk)
 	tcp_ncr_update_mode(sk, ro->reorder_mode);
 
 	ro->prior_packets_out = 0;
+
+	ro->acked = 0;
 }
 
 /* TCP-NCR: Test if TCP-NCR may be used
@@ -76,8 +79,10 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 	struct ncr *ro = inet_csk_ro(sk);
 
 	//printk(KERN_INFO "elt init: how=%u", how);
-	if (!how) //execute in I.1 but not in T.4
+	if (!how) { //execute in I.1 but not in T.4
 		ro->prior_packets_out = tp->packets_out;
+		ro->acked = 0;
+	}
 	ro->elt_flag = 1;
 	ro->dupthresh = max_t(u32, ((2 * tp->packets_out)/ro->lt_f), 3);
 }
@@ -94,12 +99,12 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int cumack)
 	//printk(KERN_INFO "elt end: cumack=%u", cumack);
 	if (cumack) {
 		/* New cumulative ACK during ELT, it is reordering. */
-		if (tp->snd_ssthresh < ro->prior_packets_out)  //test if ncr performance as good as ancr if it goes back to ss
+		if (tp->snd_ssthresh < ro->prior_packets_out)  //fix: slowstart bug
 			tp->snd_ssthresh = ro->prior_packets_out;
 		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 		if (tp->sacked_out)
-		//if (flag & FLAG_DATA_SACKED)
+		//if (flag & FLAG_DATA_SACKED) it seems as if this doesnt work 
 			tcp_ncr_elt_init(sk, 1); //T.4
 		else {
 			//printk(KERN_INFO "elt_flag 0");
@@ -137,8 +142,14 @@ static void tcp_ncr_elt(struct sock *sk)
 		0;
 
 	if (ro->reorder_mode == 1) {
-		sent = tp->packets_out > ro->prior_packets_out ?
-			tp->packets_out - ro->prior_packets_out :
+		/* acked: when receiving an ACK, that acknowledges new data, but also
+		 * carries SACK information (partial ACK in ELT), careful ELT would
+		 * send a burst of data which resembles the number of packets not sent
+		 * compared to aggressive ELT. With this variable all acknowledged
+		 * segments during ELT can be taken into account.
+		 * */
+		sent = (tp->packets_out + ro->acked) > ro->prior_packets_out ?
+			(tp->packets_out + ro->acked) - ro->prior_packets_out :
 			0;
 		room = room > sent ?
 			room - sent :
@@ -197,11 +208,14 @@ static void tcp_ncr_sack_hole_filled(struct sock *sk, int flag)
 }
 
 /* the state machine will start right after this */
-static void tcp_ncr_sm_starts(struct sock *sk, int flag)
+static void tcp_ncr_sm_starts(struct sock *sk, int flag, int acked)
 {
 	struct ncr *ro = inet_csk_ro(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (ro->elt_flag && (flag & FLAG_DATA_SACKED))
+	ro->acked += acked;
+
+	if (ro->elt_flag && (tp->sacked_out)) //(flag & FLAG_DATA_SACKED)) this one works only for new sack info?
 		tcp_ncr_elt(sk);
 }
 
@@ -256,7 +270,7 @@ static void __exit tcp_ncr_unregister(void)
 module_init(tcp_ncr_register);
 module_exit(tcp_ncr_unregister);
 
-MODULE_AUTHOR("Daniel Slot, Carsten Wolff");
+MODULE_AUTHOR("Daniel Slot, Carsten Wolff, Lennart Schulte");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("TCP-NCR");
 MODULE_VERSION("1.0");
