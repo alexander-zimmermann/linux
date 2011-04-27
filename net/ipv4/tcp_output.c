@@ -1937,10 +1937,10 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int fast_rexmit)
 			tp->total_rto_retrans++;
 
 #if FASTRETRANS_DEBUG > 0
-		if (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "retrans_out leaked.\n");
-		}
+		//if (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS) {
+		//	if (net_ratelimit())
+		//		printk(KERN_DEBUG "retrans_out leaked.\n");
+		//}
 #endif
 		if (!tp->retrans_out)
 			tp->lost_retrans_low = tp->snd_nxt;
@@ -1997,31 +1997,31 @@ static void print_queue(struct sock *sk, struct sk_buff *old, struct sk_buff *ho
 	prev = (struct sk_buff *)(&sk->sk_write_queue);
 
 	if (skb == NULL) {
-		printk("NULL head, pkts %u\n", tp->packets_out);
+		//printk("NULL head, pkts %u\n", tp->packets_out);
 		return;
 	}
-	printk("head %p tail %p sendhead %p oldhint %p now %p hole %p high %u\n",
-	       tcp_write_queue_head(sk), tcp_write_queue_tail(sk),
-	       tcp_send_head(sk), old, tp->retransmit_skb_hint, hole,
-	       tp->retransmit_high);
+	//printk("head %p tail %p sendhead %p oldhint %p now %p hole %p high %u\n",
+	//       tcp_write_queue_head(sk), tcp_write_queue_tail(sk),
+	//       tcp_send_head(sk), old, tp->retransmit_skb_hint, hole,
+	//       tp->retransmit_high);
 
 	while (skb) {
-		printk("skb %p (%u-%u) next %p prev %p sacked %u\n",
-		       skb, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq,
-		       skb->next, skb->prev, TCP_SKB_CB(skb)->sacked);
-		if (prev != skb->prev)
-			printk("Inconsistent prev\n");
+		//printk("skb %p (%u-%u) next %p prev %p sacked %u\n",
+		//       skb, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq,
+		//       skb->next, skb->prev, TCP_SKB_CB(skb)->sacked);
+		//if (prev != skb->prev)
+			//printk("Inconsistent prev\n");
 
 		if (skb == tcp_write_queue_tail(sk)) {
-			if (skb->next != (struct sk_buff *)(&sk->sk_write_queue))
-				printk("Improper next at tail\n");
+			//if (skb->next != (struct sk_buff *)(&sk->sk_write_queue))
+				//printk("Improper next at tail\n");
 			return;
 		}
 
 		prev = skb;
 		skb = skb->next;
 	}
-	printk("Encountered unexpected NULL\n");
+	//printk("Encountered unexpected NULL\n");
 }
 
 
@@ -2067,8 +2067,8 @@ checknull:
 		if (!caught_it)
 			print_queue(sk, old, hole);
 		caught_it++;
-		if (net_ratelimit())
-			printk("Errors caught so far %u\n", caught_it);
+		//if (net_ratelimit())
+			//printk("Errors caught so far %u\n", caught_it);
 		return;
 	}
 
