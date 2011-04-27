@@ -677,6 +677,7 @@ struct tcp_reorder_ops {
 	void (*sm_starts)(struct sock *sk, int flag);
 	/* recovery phase starts (optional) */
 	void (*recovery_starts)(struct sock *sk, int flag);
+	void (*recovery_ends)(struct sock *sk, int flag);
 	/* reordering event with a certain degree was detected (optional) */
 	void (*reorder_detected)(struct sock *sk, int length);
 	/* reordering event with a certain factor was detected (optional) */
@@ -871,7 +872,7 @@ extern __u32 tcp_init_cwnd(struct tcp_sock *tp, struct dst_entry *dst);
  */
 static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
 {
-	return tp->reordering;
+	return 3; //tp->reordering;
 }
 
 /* Returns end sequence number of the receiver's advertised window */
