@@ -75,6 +75,7 @@ static void tcp_ncr_elt_init(struct sock *sk, int how)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
 
+	//printk(KERN_INFO "elt init: how=%u", how);
 	if (!how) //execute in I.1 but not in T.4
 		ro->prior_packets_out = tp->packets_out;
 	ro->elt_flag = 1;
@@ -90,15 +91,20 @@ static void tcp_ncr_elt_end(struct sock *sk, int flag , int cumack)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ncr *ro = inet_csk_ro(sk);
 
+	//printk(KERN_INFO "elt end: cumack=%u", cumack);
 	if (cumack) {
 		/* New cumulative ACK during ELT, it is reordering. */
-		tp->snd_ssthresh = ro->prior_packets_out;
+		if (tp->snd_ssthresh < ro->prior_packets_out)  //test if ncr performance as good as ancr if it goes back to ss
+			tp->snd_ssthresh = ro->prior_packets_out;
 		tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, ro->prior_packets_out);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
-		if (flag & FLAG_DATA_SACKED)
+		if (tp->sacked_out)
+		//if (flag & FLAG_DATA_SACKED)
 			tcp_ncr_elt_init(sk, 1); //T.4
-		else
+		else {
+			//printk(KERN_INFO "elt_flag 0");
 			ro->elt_flag = 0;
+		}
 	} else {
 		/* Dupthresh is reached, start recovery */
 		// Don't force the RFC

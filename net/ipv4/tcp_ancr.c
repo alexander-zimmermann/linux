@@ -16,7 +16,7 @@
 
 #include <net/tcp.h>
 
-#define MIN_DUPTHRESH 2
+#define MIN_DUPTHRESH 3
 #define FIXED_POINT_SHIFT 8
 
 // copied from tcp_input.c
@@ -29,6 +29,7 @@ struct ancr {
 	u8  lt_f;
 	u32 dupthresh;
 	u32 max_factor;
+	u32 cpo;
 };
 
 static inline void tcp_ancr_init(struct sock *sk)
@@ -44,6 +45,17 @@ static inline void tcp_ancr_init(struct sock *sk)
 	ro->elt_flag = 0;
 	ro->dupthresh = MIN_DUPTHRESH;
 	ro->max_factor = 0;
+	ro->cpo = 0;
+}
+
+static void tcp_ancr_reorder_detected(struct sock *sk, int sample)
+{
+	//struct ancr *ro = inet_csk_ro(sk);
+
+	//if (sample > ro->max_sample) {
+	//	//printk(KERN_INFO "new max_sample = %u", sample);
+	//	ro->max_sample = sample;
+	//}
 }
 
 /* New reordering event, recalculate avg and mdev (and dupthresh)
@@ -55,9 +67,9 @@ static void tcp_ancr_reordering_detected_factor(struct sock *sk, int factor)
 	//1st condition: use biggest sample ever seen
 	//2nd condition: ncr upper bound (if normalized sample is 1 this is the same
 	//				 as ncr)
-	if (factor > ro->max_factor && factor <= (1 << FIXED_POINT_SHIFT)) {
-		printk(KERN_INFO "new factor = %u", factor);
-		ro->max_factor = factor;
+	if (factor > ro->max_factor) {
+		//printk(KERN_INFO "new factor = %u", factor);
+		ro->max_factor = min_t(u32, factor, 1 << FIXED_POINT_SHIFT);
 	}
 }
 
@@ -83,12 +95,22 @@ static void tcp_ancr_calc_dupthresh(struct sock *sk)
 	 * dupthresh, since it would never retransmit if no new packets would be
 	 * send during elt.
 	 */
-	u32 new = (ro->max_factor * tp->prior_packets_out) >> FIXED_POINT_SHIFT;
+	u32 new = (ro->max_factor * ro->cpo) >> FIXED_POINT_SHIFT;
 	u32 ncr = (2 * tp->packets_out)/ro->lt_f;
 
-	ro->dupthresh = max_t(u32,
-						min_t(u32, new, ncr),
-						MIN_DUPTHRESH);
+	/*if (ro->max_factor == 0) {
+		ro->dupthresh = 3;
+		printk(KERN_INFO "return 3");
+		return;
+	}*/
+
+	//u32 new_fac = ((2 << 16)/ro->max_factor);
+	//printk(KERN_DEBUG "max_f = %u, new_fac = %u", ro->max_factor,new_fac);
+	//u32 new = (((2*tp->packets_out) << 8) / (new_fac + (1 << 8))) + 1;
+	//printk(KERN_INFO "calc_dupthresh: factor=%u, new=%u, po=%u, cpo=%u", ro->max_factor, new, tp->packets_out, ro->cpo);
+
+	ro->dupthresh = min_t(u32, new, ncr);
+	ro->dupthresh = max_t(u32, ro->dupthresh, MIN_DUPTHRESH);
 }
 
 /* Initiate Extended Limited Transmit
@@ -98,9 +120,12 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
+	//printk(KERN_INFO "elt init: how=%u", how);
 	if (!how) {
+		//printk(KERN_INFO "ppo=%u", tp->packets_out);
 		tp->prior_packets_out = tp->packets_out;
 	}
+	ro->cpo = tp->packets_out;
 	ro->elt_flag = 1;
 	tcp_ancr_calc_dupthresh(sk);
 }
@@ -133,10 +158,11 @@ static void tcp_ancr_elt(struct sock *sk)
 							//too large packet burst which is followed by
 							//a long sending pause
 	}
+	//printk(KERN_INFO "elt: po=%u, ppo=%u, pif=%u, room=%u", tp->packets_out, tp->prior_packets_out, tcp_packets_in_flight(tp), room);
 
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + min_t(u32, room, 3); // burst protection
 	tp->snd_cwnd_stamp = tcp_time_stamp;
-
+	//printk(KERN_INFO "elt: cwnd=%u", tp->snd_cwnd);
 	tcp_ancr_calc_dupthresh(sk);
 }
 
@@ -148,8 +174,12 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
+	//printk(KERN_INFO "elt end");
+	//printk(KERN_INFO "elt_end: cwnd=%u, cumack=%u", tp->snd_cwnd, cumack);
+
 	tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, tp->prior_packets_out);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
+
 	if (cumack) {
 		/* New cumulative ACK during ELT, it is reordering.
 		   The following condition will only be true, if we were previously in
@@ -159,8 +189,10 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
 		   it was previously supposed to. */
 		if (tp->snd_ssthresh < tp->prior_packets_out)
 			tp->snd_ssthresh = tp->prior_packets_out;
-		if (flag & FLAG_DATA_SACKED)
+		if (tp->sacked_out > 0) {//(flag & FLAG_DATA_SACKED) {
+			//printk(KERN_INFO "elt_end: elt init 1");
 			tcp_ancr_elt_init(sk, 1);
+		}
 		else
 			ro->elt_flag = 0;
 	} else {
@@ -192,9 +224,10 @@ static void tcp_ancr_new_sack(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	// only init ELT, if we're not already in ELT and this is the first SACK'ed segment
-	if (tcp_ancr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0))
+	if (tcp_ancr_test(sk) && (!ro->elt_flag) && (tp->sacked_out == 0) && (icsk->icsk_ca_state < TCP_CA_CWR))
 		tcp_ancr_elt_init(sk, 0);
 }
 
@@ -211,8 +244,12 @@ static void tcp_ancr_sack_hole_filled(struct sock *sk, int flag)
 static void tcp_ancr_sm_starts(struct sock *sk, int flag)
 {
 	struct ancr *ro = inet_csk_ro(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (ro->elt_flag && (flag & FLAG_DATA_SACKED))
+	//if (ro->elt_flag && !(flag & FLAG_DATA_SACKED))
+	//	printk(KERN_INFO "elt, no sacked flag!");
+
+	if (ro->elt_flag && (tp->sacked_out)) //(flag & FLAG_DATA_SACKED))
 		tcp_ancr_elt(sk);
 }
 
@@ -228,7 +265,15 @@ static void tcp_ancr_recovery_starts(struct sock *sk, int flag)
 	}
 	else
 		tp->snd_ssthresh = icsk->icsk_ca_ops->ssthresh(sk);
+}
 
+static void tcp_ancr_recovery_ends(struct sock *sk, int flag)
+{
+	//struct ancr *ro = inet_csk_ro(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (tp->sacked_out) //(flag & FLAG_DATA_SACKED)
+		tcp_ancr_elt_init(sk, 0);
 }
 
 static void tcp_ancr_update_mode(struct sock *sk, int val) {
@@ -257,6 +302,8 @@ static struct tcp_reorder_ops tcp_ancr = {
 	.sack_hole_filled = tcp_ancr_sack_hole_filled,
 	.sm_starts        = tcp_ancr_sm_starts,
 	.recovery_starts  = tcp_ancr_recovery_starts,
+	.recovery_ends    = tcp_ancr_recovery_ends,
+	.reorder_detected = tcp_ancr_reorder_detected,
 	.reorder_detected_factor = tcp_ancr_reordering_detected_factor,
 
 	.update_mode      = tcp_ancr_update_mode,
