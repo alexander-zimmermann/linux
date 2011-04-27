@@ -162,6 +162,7 @@ struct tcp_info
 	__u32	tcpi_total_fast_retrans;
 	__u32	tcpi_total_rto_retrans;
 	__u32	tcpi_dupthresh;
+	__u32	tcpi_last_reor_sample;
 };
 
 /* for TCP_MD5SIG socket option */
@@ -386,6 +387,8 @@ struct tcp_sock {
 	u32	total_retrans;	/* Total retransmits for entire connection */
 	u32	total_fast_retrans;	/* Total fast retransmits for entire connection */
 	u32	total_rto_retrans;	/* Total RTO retransmits for entire connection */
+
+	u32 last_reor_sample; /* The reordering extent of the last seen reordering event */
 
 	u32	urg_seq;	/* Seq of received urgent pointer */
 	unsigned int		keepalive_time;	  /* time before keep alive takes place */
