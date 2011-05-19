@@ -148,8 +148,8 @@ static void tcp_ncr_elt(struct sock *sk)
 		 * compared to aggressive ELT. With this variable all acknowledged
 		 * segments during ELT can be taken into account.
 		 * */
-		sent = (tp->packets_out + ro->acked) > ro->prior_packets_out ?
-			(tp->packets_out + ro->acked) - ro->prior_packets_out :
+		sent = (tp->packets_out/* + ro->acked*/) > ro->prior_packets_out ?
+			(tp->packets_out/* + ro->acked*/) - ro->prior_packets_out :
 			0;
 		room = room > sent ?
 			room - sent :

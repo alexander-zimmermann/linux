@@ -93,20 +93,20 @@ static void tcp_ancr_calc_dupthresh(struct sock *sk)
 	 * dupthresh, since it would never retransmit if no new packets would be
 	 * send during elt.
 	 */
-	//u32 new = (ro->max_factor * ro->prior_packets_out) >> FIXED_POINT_SHIFT;
-	//u32 ncr = (2 * tp->packets_out)/ro->lt_f;
+	u32 new = (ro->max_factor * tp->prior_packets_out) >> FIXED_POINT_SHIFT;
+	u32 ncr = (2 * tp->packets_out)/ro->lt_f;
 
-	if (ro->max_factor == 0) {
+	/*if (ro->max_factor == 0) {
 		ro->dupthresh = 3;
 		//printk(KERN_INFO "return 3");
 		return;
-	}
+	}*/
 
-	u32 new_fac = ((2 << 16)/ro->max_factor);
+	//u32 new_fac = ((2 << 16)/ro->max_factor);
 	//printk(KERN_DEBUG "max_f = %u, new_fac = %u", ro->max_factor,new_fac);
-	ro->dupthresh = (((2*tp->packets_out) << 8) / (new_fac + (1 << 8))) + 1;
+	//ro->dupthresh = (((2*tp->packets_out) << 8) / (new_fac + (1 << 8))) + 1;
 
-	//ro->dupthresh = min_t(u32, new, ncr);
+	ro->dupthresh = min_t(u32, new, ncr);
 	ro->dupthresh = max_t(u32, ro->dupthresh, MIN_DUPTHRESH);
 }
 
@@ -117,11 +117,17 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
+	/* set current cwnd on entering disorder */
+	if (!how)
+		tp->current_cwnd = tp->snd_cwnd;
+
+	/* set prior_packets_out if entering disorder or recover is reached */
 	//printk(KERN_INFO "elt init: how=%u", how);
-	if (!how) {
-		//printk(KERN_INFO "ppo=%u", tp->packets_out);
-		tp->prior_packets_out = tp->packets_out;
+	if (!how || (tp->high_seq <= tp->snd_una)) {
+		tp->prior_packets_out = tp->current_cwnd;
+		tp->high_seq = tp->snd_nxt;
 	}
+
 	ro->elt_flag = 1;
 	tcp_ancr_calc_dupthresh(sk);
 }
@@ -137,20 +143,20 @@ static void tcp_ancr_elt(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 	u32 sent;
-	u32 room = tp->prior_packets_out > tcp_packets_in_flight(tp) ?
-		tp->prior_packets_out - tcp_packets_in_flight(tp) :
+	u32 room = tp->current_cwnd > tcp_packets_in_flight(tp) ?
+		tp->current_cwnd - tcp_packets_in_flight(tp) :
 		0;
 
 	if (ro->reorder_mode == 1) {
 		//pkts sent during elt up to now
-		sent = tp->packets_out > tp->prior_packets_out ?
-			tp->packets_out - tp->prior_packets_out :
+		sent = tp->packets_out > tp->current_cwnd ?
+			tp->packets_out - tp->current_cwnd :
 			0;
 		room = room > sent ?
 			room - sent :
 			0;
-		if (room > 1)	//only happens with ACK loss/reordering
-			room = (room+1)/2;	//prevent ACK loss/reordering to trigger
+		//if (room > 1)	//only happens with ACK loss/reordering
+		//	room = (room+1)/2;	//prevent ACK loss/reordering to trigger
 							//too large packet burst which is followed by
 							//a long sending pause
 	}
@@ -170,27 +176,28 @@ static void tcp_ancr_elt_end(struct sock *sk, int flag , int cumack)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
-	//printk(KERN_INFO "elt end");
 	//printk(KERN_INFO "elt_end: cwnd=%u, cumack=%u", tp->snd_cwnd, cumack);
 
-	tp->snd_cwnd = min(tcp_packets_in_flight(tp) + 1, tp->prior_packets_out);
-	tp->snd_cwnd_stamp = tcp_time_stamp;
-
 	if (cumack) {
-		/* New cumulative ACK during ELT, it is reordering.
-		   The following condition will only be true, if we were previously in
-		   congestion avoidance. In that case, set ssthresh to allow slow
-		   starting quickly back to the previous operating point. Otherwise,
-		   don't touch ssthresh to allow slow start to continue to the point
-		   it was previously supposed to. */
-		if (tp->snd_ssthresh < tp->prior_packets_out)
-			tp->snd_ssthresh = tp->prior_packets_out;
-		if (tp->sacked_out > 0) {//(flag & FLAG_DATA_SACKED) {
+		/* New cumulative ACK during ELT, it is reordering.*/
+		if (tp->sacked_out > 0) {
 			//printk(KERN_INFO "elt_end: elt init 1");
 			tcp_ancr_elt_init(sk, 1);
 		}
-		else
+		else {
 			ro->elt_flag = 0;
+
+		    /*The following condition will only be true, if we were previously in
+		      congestion avoidance. In that case, set ssthresh to allow slow
+			  starting quickly back to the previous operating point. Otherwise,
+		      don't touch ssthresh to allow slow start to continue to the point
+		      it was previously supposed to. */
+			if (tp->snd_ssthresh < tp->current_cwnd)
+				tp->snd_ssthresh = tp->current_cwnd;
+
+			tp->snd_cwnd = tcp_packets_in_flight(tp) + 1;
+			tp->snd_cwnd_stamp = tcp_time_stamp;
+		}
 	} else {
 		/* Dupthresh is reached, start recovery, set ssthresh to an
 		 * appropriate value to start with ratehalving */
@@ -327,4 +334,4 @@ module_exit(tcp_ancr_unregister);
 MODULE_AUTHOR("Carsten Wolff, Lennart Schulte");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("TCP-ANCR");
-MODULE_VERSION("2.0");
+MODULE_VERSION("3.0");

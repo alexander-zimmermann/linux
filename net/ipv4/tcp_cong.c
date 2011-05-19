@@ -330,8 +330,10 @@ void tcp_slow_start(struct tcp_sock *tp)
 	tp->snd_cwnd_cnt += cnt;
 	while (tp->snd_cwnd_cnt >= tp->snd_cwnd) {
 		tp->snd_cwnd_cnt -= tp->snd_cwnd;
-		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
 			tp->snd_cwnd++;
+			tp->current_cwnd++;
+		}
 	}
 }
 EXPORT_SYMBOL_GPL(tcp_slow_start);
@@ -340,8 +342,10 @@ EXPORT_SYMBOL_GPL(tcp_slow_start);
 void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w)
 {
 	if (tp->snd_cwnd_cnt >= w) {
-		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
 			tp->snd_cwnd++;
+			tp->current_cwnd++;
+		}
 		tp->snd_cwnd_cnt = 0;
 	} else {
 		tp->snd_cwnd_cnt++;
