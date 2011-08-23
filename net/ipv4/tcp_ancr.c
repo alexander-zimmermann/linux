@@ -117,7 +117,8 @@ static void tcp_ancr_elt_init(struct sock *sk, int how)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct ancr *ro = inet_csk_ro(sk);
 
-	/* set current cwnd on entering disorder */
+	/* on entering disorder current_cwnd has to be set to cwnd
+	 * else it would just be increased all the time */
 	if (!how)
 		tp->current_cwnd = tp->snd_cwnd;
 
@@ -155,8 +156,8 @@ static void tcp_ancr_elt(struct sock *sk)
 		room = room > sent ?
 			room - sent :
 			0;
-		//if (room > 1)	//only happens with ACK loss/reordering
-		//	room = (room+1)/2;	//prevent ACK loss/reordering to trigger
+		if (room > 1)	//happens with ACK loss/reordering and after a partial ACK
+			room = (room+1)/2;	//prevent ACK loss/reordering to trigger
 							//too large packet burst which is followed by
 							//a long sending pause
 	}
