@@ -2328,6 +2328,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_total_retrans = tp->total_retrans;
 	info->tcpi_total_fast_retrans = tp->total_fast_retrans;
 	info->tcpi_total_rto_retrans = tp->total_rto_retrans;
+	info->tcpi_total_dsacks = tp->total_dsacks;
 
 	info->tcpi_dupthresh = inet_csk(sk)->icsk_ro_ops->moddupthresh(sk);
 	info->tcpi_last_reor_sample = tp->last_reor_sample;

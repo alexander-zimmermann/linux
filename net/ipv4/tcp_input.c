@@ -1294,8 +1294,8 @@ static int tcp_check_dsack(struct sock *sk, struct sk_buff *ack_skb,
 
 	/* Count spurious retransmission by couting DSACKs.
 	 * This works as long as the network does not duplicate segments. */
-	//if (dup_sack)
-	//	tp->total_spurious_retrans++;
+	if (dup_sack)
+		tp->total_dsacks++;
 
 	/* D-SACK for already forgotten data... Do dumb counting. */
 	if (dup_sack &&

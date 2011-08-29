@@ -161,6 +161,7 @@ struct tcp_info
 	__u32	tcpi_total_retrans;
 	__u32	tcpi_total_fast_retrans;
 	__u32	tcpi_total_rto_retrans;
+	__u32   tcpi_total_dsacks;
 	__u32	tcpi_dupthresh;
 	__u32	tcpi_last_reor_sample;
 };
@@ -388,6 +389,7 @@ struct tcp_sock {
 	u32	total_retrans;	/* Total retransmits for entire connection */
 	u32	total_fast_retrans;	/* Total fast retransmits for entire connection */
 	u32	total_rto_retrans;	/* Total RTO retransmits for entire connection */
+	u32 total_dsacks; /* Total number of DSACKs received */
 
 	u32 last_reor_sample; /* The reordering extent of the last seen reordering event */
 
