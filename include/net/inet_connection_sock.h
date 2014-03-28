@@ -95,6 +95,7 @@ struct inet_connection_sock {
 	__u32			  icsk_rto;
 	__u32			  icsk_pmtu_cookie;
 	const struct tcp_congestion_ops *icsk_ca_ops;
+	const struct tcp_reorder_ops *icsk_ro_ops;
 	const struct inet_connection_sock_af_ops *icsk_af_ops;
 	unsigned int		  (*icsk_sync_mss)(struct sock *sk, u32 pmtu);
 	__u8			  icsk_ca_state;
@@ -126,7 +127,9 @@ struct inet_connection_sock {
 		int		  probe_size;
 	} icsk_mtup;
 	u32			  icsk_ca_priv[16];
+	u32			  icsk_ro_priv[5];
 #define ICSK_CA_PRIV_SIZE	(16 * sizeof(u32))
+#define ICSK_RO_PRIV_SIZE   (5  * sizeof(u32))
 };
 
 #define ICSK_TIME_RETRANS	1	/* Retransmit timer */
@@ -142,6 +145,11 @@ static inline struct inet_connection_sock *inet_csk(const struct sock *sk)
 static inline void *inet_csk_ca(const struct sock *sk)
 {
 	return (void *)inet_csk(sk)->icsk_ca_priv;
+}
+
+static inline void *inet_csk_ro(const struct sock *sk)
+{
+	return (void *)inet_csk(sk)->icsk_ro_priv;
 }
 
 extern struct sock *inet_csk_clone(struct sock *sk,

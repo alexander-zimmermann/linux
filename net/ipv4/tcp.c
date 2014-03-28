@@ -2101,6 +2101,23 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		release_sock(sk);
 		return err;
 	}
+	if (optname == TCP_REORDER) {
+		char name[TCP_REORDER_NAME_MAX];
+
+		if (optlen < 1)
+			return -EINVAL;
+
+		val = strncpy_from_user(name, optval,
+					min(TCP_REORDER_NAME_MAX-1, optlen));
+		if (val < 0)
+			return -EFAULT;
+		name[val] = 0;
+
+		lock_sock(sk);
+		err = tcp_set_reorder(sk, name);
+		release_sock(sk);
+		return err;
+	}
 
 	if (optlen < sizeof(int))
 		return -EINVAL;
@@ -2111,6 +2128,11 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 	lock_sock(sk);
 
 	switch (optname) {
+	case TCP_REORDER_MODE:
+		if (icsk->icsk_ro_ops->update_mode)
+			icsk->icsk_ro_ops->update_mode(sk, val);
+		break;
+
 	case TCP_MAXSEG:
 		/* Values greater than interface MTU won't take effect. However
 		 * at the point when this call is done we typically don't yet
@@ -2342,6 +2364,12 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_rcv_space = tp->rcvq_space.space;
 
 	info->tcpi_total_retrans = tp->total_retrans;
+	info->tcpi_total_fast_retrans = tp->total_fast_retrans;
+	info->tcpi_total_rto_retrans = tp->total_rto_retrans;
+	info->tcpi_total_dsacks = tp->total_dsacks;
+
+	info->tcpi_dupthresh = inet_csk(sk)->icsk_ro_ops->moddupthresh(sk);
+	info->tcpi_last_reor_sample = tp->last_reor_sample;
 }
 
 EXPORT_SYMBOL_GPL(tcp_get_info);
@@ -2423,6 +2451,15 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 		if (copy_to_user(optval, icsk->icsk_ca_ops->name, len))
+			return -EFAULT;
+		return 0;
+	case TCP_REORDER:
+		if (get_user(len, optlen))
+			return -EFAULT;
+		len = min_t(unsigned int, len, TCP_REORDER_NAME_MAX);
+		if (put_user(len, optlen))
+			return -EFAULT;
+		if (copy_to_user(optval, icsk->icsk_ro_ops->name, len))
 			return -EFAULT;
 		return 0;
 	default:
@@ -2975,6 +3012,7 @@ void __init tcp_init(void)
 	       tcp_hashinfo.ehash_size, tcp_hashinfo.bhash_size);
 
 	tcp_register_congestion_control(&tcp_reno);
+	tcp_register_reorder(&tcp_native);
 }
 
 EXPORT_SYMBOL(tcp_close);

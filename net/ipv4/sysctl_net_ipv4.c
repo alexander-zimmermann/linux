@@ -90,6 +90,102 @@ static int ipv4_sysctl_local_port_range(ctl_table *table,
 	return ret;
 }
 
+static int proc_tcp_reorder(ctl_table *ctl, int write,
+				       void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	char val[TCP_REORDER_NAME_MAX];
+	ctl_table tbl = {
+		.data = val,
+		.maxlen = TCP_REORDER_NAME_MAX,
+	};
+	int ret;
+
+	tcp_get_default_reorder(val);
+
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	if (write && ret == 0)
+		ret = tcp_set_default_reorder(val);
+	return ret;
+}
+
+static int sysctl_tcp_reorder(ctl_table *table,
+					 void __user *oldval,
+					 size_t __user *oldlenp,
+					 void __user *newval, size_t newlen)
+{
+	char val[TCP_REORDER_NAME_MAX];
+	ctl_table tbl = {
+		.data = val,
+		.maxlen = TCP_REORDER_NAME_MAX,
+	};
+	int ret;
+
+	tcp_get_default_reorder(val);
+	ret = sysctl_string(&tbl, oldval, oldlenp, newval, newlen);
+	if (ret == 1 && newval && newlen)
+		ret = tcp_set_default_reorder(val);
+	return ret;
+}
+
+static int proc_tcp_available_reorder(ctl_table *ctl,
+						 int write,
+						 void __user *buffer, size_t *lenp,
+						 loff_t *ppos)
+{
+	ctl_table tbl = { .maxlen = TCP_REORDER_BUF_MAX, };
+	int ret;
+
+	tbl.data = kmalloc(tbl.maxlen, GFP_USER);
+	if (!tbl.data)
+		return -ENOMEM;
+	tcp_get_available_reorder(tbl.data, TCP_REORDER_BUF_MAX);
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	kfree(tbl.data);
+	return ret;
+}
+
+static int proc_allowed_reorder(ctl_table *ctl,
+					   int write,
+					   void __user *buffer, size_t *lenp,
+					   loff_t *ppos)
+{
+	ctl_table tbl = { .maxlen = TCP_REORDER_BUF_MAX };
+	int ret;
+
+	tbl.data = kmalloc(tbl.maxlen, GFP_USER);
+	if (!tbl.data)
+		return -ENOMEM;
+
+	tcp_get_allowed_reorder(tbl.data, tbl.maxlen);
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	if (write && ret == 0)
+		ret = tcp_set_allowed_reorder(tbl.data);
+	kfree(tbl.data);
+	return ret;
+}
+
+static int strategy_allowed_reorder(ctl_table *table,
+					       void __user *oldval,
+					       size_t __user *oldlenp,
+					       void __user *newval,
+					       size_t newlen)
+{
+	ctl_table tbl = { .maxlen = TCP_REORDER_BUF_MAX };
+	int ret;
+
+	tbl.data = kmalloc(tbl.maxlen, GFP_USER);
+	if (!tbl.data)
+		return -ENOMEM;
+
+	tcp_get_available_reorder(tbl.data, tbl.maxlen);
+	ret = sysctl_string(&tbl, oldval, oldlenp, newval, newlen);
+	if (ret == 1 && newval && newlen)
+		ret = tcp_set_allowed_reorder(tbl.data);
+	kfree(tbl.data);
+
+	return ret;
+
+}
 
 static int proc_tcp_congestion_control(ctl_table *ctl, int write,
 				       void __user *buffer, size_t *lenp, loff_t *ppos)
@@ -607,6 +703,14 @@ static struct ctl_table ipv4_table[] = {
 		.strategy	= sysctl_tcp_congestion_control,
 	},
 	{
+		.ctl_name	= NET_TCP_REORDER,
+		.procname	= "tcp_reorder",
+		.mode		= 0644,
+		.maxlen		= TCP_REORDER_NAME_MAX,
+		.proc_handler	= proc_tcp_reorder,
+		.strategy	= sysctl_tcp_reorder,
+	},
+	{
 		.ctl_name	= NET_TCP_ABC,
 		.procname	= "tcp_abc",
 		.data		= &sysctl_tcp_abc,
@@ -703,6 +807,20 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler   = proc_allowed_congestion_control,
 		.strategy	= strategy_allowed_congestion_control,
+	},
+	{
+		.procname	= "tcp_available_reorder",
+		.maxlen		= TCP_REORDER_BUF_MAX,
+		.mode		= 0444,
+		.proc_handler   = proc_tcp_available_reorder,
+	},
+	{
+		.ctl_name	= NET_TCP_ALLOWED_REORDER,
+		.procname	= "tcp_allowed_reorder",
+		.maxlen		= TCP_REORDER_BUF_MAX,
+		.mode		= 0644,
+		.proc_handler   = proc_allowed_reorder,
+		.strategy	= strategy_allowed_reorder,
 	},
 	{
 		.ctl_name	= NET_TCP_MAX_SSTHRESH,

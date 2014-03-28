@@ -320,7 +320,7 @@ void tcp_retransmit_timer(struct sock *sk)
 			goto out;
 		}
 		tcp_enter_loss(sk, 0);
-		tcp_retransmit_skb(sk, tcp_write_queue_head(sk));
+		tcp_retransmit_skb(sk, tcp_write_queue_head(sk), 0);
 		__sk_dst_reset(sk);
 		goto out_reset_timer;
 	}
@@ -349,13 +349,16 @@ void tcp_retransmit_timer(struct sock *sk)
 		NET_INC_STATS_BH(sock_net(sk), mib_idx);
 	}
 
+	if (icsk->icsk_ro_ops->rto_happened)
+		icsk->icsk_ro_ops->rto_happened(sk);
+
 	if (tcp_use_frto(sk)) {
 		tcp_enter_frto(sk);
 	} else {
 		tcp_enter_loss(sk, 0);
 	}
 
-	if (tcp_retransmit_skb(sk, tcp_write_queue_head(sk)) > 0) {
+	if (tcp_retransmit_skb(sk, tcp_write_queue_head(sk), 0) > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
 		 */

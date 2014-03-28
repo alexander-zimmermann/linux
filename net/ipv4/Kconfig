@@ -627,3 +627,74 @@ config TCP_MD5SIG
 
 	  If unsure, say N.
 
+menuconfig TCP_REORDER_ADVANCED
+	bool "TCP: advanced reordering algorithms"
+	---help---
+	  Support for selection of various TCP reordering algorithms.
+
+	  Nearly all users can safely say no here, and a safe default
+	  selection will be made (native Linux algorithm).
+
+	  If unsure, say N.
+
+if TCP_REORDER_ADVANCED
+
+config TCP_REORDER_NCR
+	tristate "TCP-NCR"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	TCP-NCR improves the robustness of TCP to non-congestion events.
+	The algorithm is described in RFC4653
+
+	For further details see:
+	  http://tools.ietf.org/html/rfc4653
+
+config TCP_REORDER_ANCR
+	tristate "TCP-ANCR"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	TCP-ANCR improves the robustness of TCP to reordering.
+	It is based on TCP-NCR (http://tools.ietf.org/html/rfc4653)
+	and the native Linux behavior.
+
+config TCP_REORDER_LEUNGMA
+	tristate "TCP-LEUNGMA"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	TCP-LEUNGMA is based on this paper by Leung
+	and Ma (http://www.eee.hku.hk/~kcleung/papers/journals/
+	TCP_reordering:JCN_2005/JCN04-3-107.pdf)
+
+choice
+	prompt "Default TCP reordering algorithm"
+	default DEFAULT_REORDER_NATIVE
+	help
+	  Select the TCP reordering algorithm that will be used by default
+	  for all connections.
+
+	config DEFAULT_REORDER_NCR
+		bool "ncr" if TCP_REORDER_NCR=y
+
+	config DEFAULT_REORDER_ANCR
+		bool "ancr" if TCP_REORDER_ANCR=y
+
+	config DEFAULT_REORDER_LEUNGMA
+		bool "leungma" if TCP_REORDER_LEUNGMA=y
+
+	config DEFAULT_REORDER_NATIVE
+		bool "native"
+
+endchoice
+
+endif
+
+config DEFAULT_TCP_REORDER
+	string
+	default "ncr" if DEFAULT_REORDER_NCR
+	default "ancr" if DEFAULT_REORDER_ANCR
+	default "leungma" if DEFAULT_REORDER_LEUNGMA
+	default "native"
+

@@ -1856,6 +1856,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 
 	icsk->icsk_af_ops = &ipv6_specific;
 	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
+	icsk->icsk_ro_ops = &tcp_init_reorder_ops;
 	icsk->icsk_sync_mss = tcp_sync_mss;
 	sk->sk_write_space = sk_stream_write_space;
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);

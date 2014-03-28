@@ -390,6 +390,9 @@ static const struct trans_ctl_table trans_net_ipv4_table[] = {
 	{ NET_TCP_ALLOWED_CONG_CONTROL,		"tcp_allowed_congestion_control" },
 	{ NET_TCP_MAX_SSTHRESH,			"tcp_max_ssthresh" },
 	{ NET_TCP_FRTO_RESPONSE,		"tcp_frto_response" },
+	{ NET_TCP_REORDER,		"tcp_reorder"}
+	{ NET_TCP_AVAIL_REORDER,		"tcp_available_reorder"}
+	{ NET_TCP_ALLOWED_REORDER,		"tcp_allowed_reorder"}
 	{ 2088 /* NET_IPQ_QMAX */,		"ip_queue_maxlen" },
 	{}
 };

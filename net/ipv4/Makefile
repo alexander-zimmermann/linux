@@ -7,7 +7,7 @@ obj-y     := route.o inetpeer.o protocol.o \
 	     ip_output.o ip_sockglue.o inet_hashtables.o \
 	     inet_timewait_sock.o inet_connection_sock.o \
 	     tcp.o tcp_input.o tcp_output.o tcp_timer.o tcp_ipv4.o \
-	     tcp_minisocks.o tcp_cong.o \
+	     tcp_minisocks.o tcp_cong.o tcp_reorder.o \
 	     datagram.o raw.o udp.o udplite.o \
 	     arp.o icmp.o devinet.o af_inet.o  igmp.o \
 	     fib_frontend.o fib_semantics.o \
@@ -48,6 +48,10 @@ obj-$(CONFIG_TCP_CONG_SCALABLE) += tcp_scalable.o
 obj-$(CONFIG_TCP_CONG_LP) += tcp_lp.o
 obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
 obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
+obj-$(CONFIG_TCP_REORDER_NCR) += tcp_ncr.o
+obj-$(CONFIG_TCP_REORDER_ANCR) += tcp_ancr.o
+obj-$(CONFIG_TCP_REORDER_LEUNGMA) += tcp_leungma.o
+#obj-$(CONFIG_TCP_REORDER_NONE) += tcp_noreor.o
 obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
 
 obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
