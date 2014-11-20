@@ -942,7 +942,7 @@ static int nilfs_get_root_dentry(struct super_block *sb,
 			iput(inode);
 		}
 	} else {
-		dentry = d_obtain_alias(inode);
+		dentry = d_obtain_root(inode);
 		if (IS_ERR(dentry)) {
 			ret = PTR_ERR(dentry);
 			goto failed_dentry;
@@ -994,23 +994,16 @@ static int nilfs_attach_snapshot(struct super_block *s, __u64 cno,
 	return ret;
 }
 
-static int nilfs_tree_was_touched(struct dentry *root_dentry)
-{
-	return d_count(root_dentry) > 1;
-}
-
 /**
- * nilfs_try_to_shrink_tree() - try to shrink dentries of a checkpoint
+ * nilfs_tree_is_busy() - try to shrink dentries of a checkpoint
  * @root_dentry: root dentry of the tree to be shrunk
  *
  * This function returns true if the tree was in-use.
  */
-static int nilfs_try_to_shrink_tree(struct dentry *root_dentry)
+static bool nilfs_tree_is_busy(struct dentry *root_dentry)
 {
-	if (have_submounts(root_dentry))
-		return true;
 	shrink_dcache_parent(root_dentry);
-	return nilfs_tree_was_touched(root_dentry);
+	return d_count(root_dentry) > 1;
 }
 
 int nilfs_checkpoint_is_mounted(struct super_block *sb, __u64 cno)
@@ -1034,8 +1027,7 @@ int nilfs_checkpoint_is_mounted(struct super_block *sb, __u64 cno)
 		if (inode) {
 			dentry = d_find_alias(inode);
 			if (dentry) {
-				if (nilfs_tree_was_touched(dentry))
-					ret = nilfs_try_to_shrink_tree(dentry);
+				ret = nilfs_tree_is_busy(dentry);
 				dput(dentry);
 			}
 			iput(inode);
@@ -1137,6 +1129,7 @@ static int nilfs_remount(struct super_block *sb, int *flags, char *data)
 	unsigned long old_mount_opt;
 	int err;
 
+	sync_filesystem(sb);
 	old_sb_flags = sb->s_flags;
 	old_mount_opt = nilfs->ns_mount_opt;
 
@@ -1331,11 +1324,8 @@ nilfs_mount(struct file_system_type *fs_type, int flags,
 
 		s->s_flags |= MS_ACTIVE;
 	} else if (!sd.cno) {
-		int busy = false;
-
-		if (nilfs_tree_was_touched(s->s_root)) {
-			busy = nilfs_try_to_shrink_tree(s->s_root);
-			if (busy && (flags ^ s->s_flags) & MS_RDONLY) {
+		if (nilfs_tree_is_busy(s->s_root)) {
+			if ((flags ^ s->s_flags) & MS_RDONLY) {
 				printk(KERN_ERR "NILFS: the device already "
 				       "has a %s mount.\n",
 				       (s->s_flags & MS_RDONLY) ?
@@ -1343,8 +1333,7 @@ nilfs_mount(struct file_system_type *fs_type, int flags,
 				err = -EBUSY;
 				goto failed_super;
 			}
-		}
-		if (!busy) {
+		} else {
 			/*
 			 * Try remount to setup mount states if the current
 			 * tree is not mounted and only snapshots use this sb.
@@ -1463,13 +1452,19 @@ static int __init init_nilfs_fs(void)
 	if (err)
 		goto fail;
 
-	err = register_filesystem(&nilfs_fs_type);
+	err = nilfs_sysfs_init();
 	if (err)
 		goto free_cachep;
+
+	err = register_filesystem(&nilfs_fs_type);
+	if (err)
+		goto deinit_sysfs_entry;
 
 	printk(KERN_INFO "NILFS version 2 loaded\n");
 	return 0;
 
+deinit_sysfs_entry:
+	nilfs_sysfs_exit();
 free_cachep:
 	nilfs_destroy_cachep();
 fail:
@@ -1479,6 +1474,7 @@ fail:
 static void __exit exit_nilfs_fs(void)
 {
 	nilfs_destroy_cachep();
+	nilfs_sysfs_exit();
 	unregister_filesystem(&nilfs_fs_type);
 }
 

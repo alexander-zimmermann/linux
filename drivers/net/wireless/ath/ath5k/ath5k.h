@@ -29,6 +29,7 @@
 #include <linux/average.h>
 #include <linux/leds.h>
 #include <net/mac80211.h>
+#include <net/cfg80211.h>
 
 /* RX/TX descriptor hw structs
  * TODO: Driver part should only see sw structs */
@@ -1284,6 +1285,7 @@ struct ath5k_hw {
 #define ATH_STAT_STARTED	3		/* opened & irqs enabled */
 
 	unsigned int		filter_flags;	/* HW flags, AR5K_RX_FILTER_* */
+	unsigned int		fif_filter_flags; /* Current FIF_* filter flags */
 	struct ieee80211_channel *curchan;	/* current h/w channel */
 
 	u16			nvifs;

@@ -68,16 +68,12 @@ static inline struct eeh_dev *__eeh_addr_cache_get_device(unsigned long addr)
 		struct pci_io_addr_range *piar;
 		piar = rb_entry(n, struct pci_io_addr_range, rb_node);
 
-		if (addr < piar->addr_lo) {
+		if (addr < piar->addr_lo)
 			n = n->rb_left;
-		} else {
-			if (addr > piar->addr_hi) {
-				n = n->rb_right;
-			} else {
-				pci_dev_get(piar->pcidev);
-				return piar->edev;
-			}
-		}
+		else if (addr > piar->addr_hi)
+			n = n->rb_right;
+		else
+			return piar->edev;
 	}
 
 	return NULL;
@@ -147,7 +143,7 @@ eeh_addr_cache_insert(struct pci_dev *dev, unsigned long alo,
 		} else {
 			if (dev != piar->pcidev ||
 			    alo != piar->addr_lo || ahi != piar->addr_hi) {
-				pr_warning("PIAR: overlapping address range\n");
+				pr_warn("PIAR: overlapping address range\n");
 			}
 			return piar;
 		}
@@ -156,7 +152,6 @@ eeh_addr_cache_insert(struct pci_dev *dev, unsigned long alo,
 	if (!piar)
 		return NULL;
 
-	pci_dev_get(dev);
 	piar->addr_lo = alo;
 	piar->addr_hi = ahi;
 	piar->edev = pci_dev_to_eeh_dev(dev);
@@ -182,19 +177,20 @@ static void __eeh_addr_cache_insert_dev(struct pci_dev *dev)
 
 	dn = pci_device_to_OF_node(dev);
 	if (!dn) {
-		pr_warning("PCI: no pci dn found for dev=%s\n", pci_name(dev));
+		pr_warn("PCI: no pci dn found for dev=%s\n",
+			pci_name(dev));
 		return;
 	}
 
 	edev = of_node_to_eeh_dev(dn);
 	if (!edev) {
-		pr_warning("PCI: no EEH dev found for dn=%s\n",
+		pr_warn("PCI: no EEH dev found for dn=%s\n",
 			dn->full_name);
 		return;
 	}
 
 	/* Skip any devices for which EEH is not enabled. */
-	if (!eeh_probe_mode_dev() && !edev->pe) {
+	if (!edev->pe) {
 #ifdef DEBUG
 		pr_info("PCI: skip building address cache for=%s - %s\n",
 			pci_name(dev), dn->full_name);
@@ -250,7 +246,6 @@ restart:
 
 		if (piar->pcidev == dev) {
 			rb_erase(n, &pci_io_addr_cache_root.rb_root);
-			pci_dev_put(piar->pcidev);
 			kfree(piar);
 			goto restart;
 		}
@@ -302,12 +297,10 @@ void eeh_addr_cache_build(void)
 		if (!edev)
 			continue;
 
-		pci_dev_get(dev);  /* matching put is in eeh_remove_device() */
 		dev->dev.archdata.edev = edev;
 		edev->pdev = dev;
 
 		eeh_addr_cache_insert_dev(dev);
-
 		eeh_sysfs_add_device(dev);
 	}
 

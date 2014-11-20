@@ -12,22 +12,25 @@
 
 #include <linux/module.h>
 #include <linux/reboot.h>
+#include <linux/clk/at91_pmc.h>
 
 #include <asm/irq.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/system_misc.h>
 #include <mach/at91rm9200.h>
-#include <mach/at91_pmc.h>
 #include <mach/at91_st.h>
 #include <mach/cpu.h>
+#include <mach/hardware.h>
 
 #include "at91_aic.h"
 #include "soc.h"
 #include "generic.h"
-#include "clock.h"
 #include "sam9_smc.h"
+#include "pm.h"
 
+#if defined(CONFIG_OLD_CLK_AT91)
+#include "clock.h"
 /* --------------------------------------------------------------------
  *  Clocks
  * -------------------------------------------------------------------- */
@@ -275,6 +278,9 @@ static void __init at91rm9200_register_clocks(void)
 	clk_register(&pck2);
 	clk_register(&pck3);
 }
+#else
+#define at91rm9200_register_clocks NULL
+#endif
 
 /* --------------------------------------------------------------------
  *  GPIO
@@ -327,6 +333,7 @@ static void __init at91rm9200_ioremap_registers(void)
 {
 	at91rm9200_ioremap_st(AT91RM9200_BASE_ST);
 	at91_ioremap_ramc(0, AT91RM9200_BASE_MC, 256);
+	at91_pm_set_standby(at91rm9200_standby);
 }
 
 static void __init at91rm9200_initialize(void)

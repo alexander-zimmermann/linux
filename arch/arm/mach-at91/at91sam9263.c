@@ -11,6 +11,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/clk/at91_pmc.h>
 
 #include <asm/proc-fns.h>
 #include <asm/irq.h>
@@ -18,15 +19,17 @@
 #include <asm/mach/map.h>
 #include <asm/system_misc.h>
 #include <mach/at91sam9263.h>
-#include <mach/at91_pmc.h>
+#include <mach/hardware.h>
 
 #include "at91_aic.h"
 #include "at91_rstc.h"
 #include "soc.h"
 #include "generic.h"
-#include "clock.h"
 #include "sam9_smc.h"
+#include "pm.h"
 
+#if defined(CONFIG_OLD_CLK_AT91)
+#include "clock.h"
 /* --------------------------------------------------------------------
  *  Clocks
  * -------------------------------------------------------------------- */
@@ -197,6 +200,7 @@ static struct clk_lookup periph_clocks_lookups[] = {
 	CLKDEV_CON_DEV_ID("spi_clk", "atmel_spi.1", &spi1_clk),
 	CLKDEV_CON_DEV_ID("t0_clk", "atmel_tcb.0", &tcb_clk),
 	CLKDEV_CON_DEV_ID(NULL, "i2c-at91sam9260.0", &twi_clk),
+	CLKDEV_CON_DEV_ID(NULL, "at91sam9rl-pwm", &pwm_clk),
 	/* fake hclk clock */
 	CLKDEV_CON_DEV_ID("hclk", "at91_ohci", &ohci_clk),
 	CLKDEV_CON_ID("pioA", &pioA_clk),
@@ -222,6 +226,7 @@ static struct clk_lookup periph_clocks_lookups[] = {
 	CLKDEV_CON_DEV_ID(NULL, "fffff600.gpio", &pioCDE_clk),
 	CLKDEV_CON_DEV_ID(NULL, "fffff800.gpio", &pioCDE_clk),
 	CLKDEV_CON_DEV_ID(NULL, "fffffa00.gpio", &pioCDE_clk),
+	CLKDEV_CON_DEV_ID(NULL, "fffb8000.pwm", &pwm_clk),
 };
 
 static struct clk_lookup usart_clocks_lookups[] = {
@@ -277,6 +282,9 @@ static void __init at91sam9263_register_clocks(void)
 	clk_register(&pck2);
 	clk_register(&pck3);
 }
+#else
+#define at91sam9263_register_clocks NULL
+#endif
 
 /* --------------------------------------------------------------------
  *  GPIO
@@ -321,12 +329,16 @@ static void __init at91sam9263_ioremap_registers(void)
 	at91sam9_ioremap_smc(0, AT91SAM9263_BASE_SMC0);
 	at91sam9_ioremap_smc(1, AT91SAM9263_BASE_SMC1);
 	at91_ioremap_matrix(AT91SAM9263_BASE_MATRIX);
+	at91_pm_set_standby(at91sam9_sdram_standby);
 }
 
 static void __init at91sam9263_initialize(void)
 {
 	arm_pm_idle = at91sam9_idle;
 	arm_pm_restart = at91sam9_alt_restart;
+
+	at91_sysirq_mask_rtt(AT91SAM9263_BASE_RTT0);
+	at91_sysirq_mask_rtt(AT91SAM9263_BASE_RTT1);
 
 	/* Register GPIO subsystem */
 	at91_gpio_init(at91sam9263_gpio, 5);

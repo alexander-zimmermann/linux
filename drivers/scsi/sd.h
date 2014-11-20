@@ -13,7 +13,11 @@
  */
 #define SD_TIMEOUT		(30 * HZ)
 #define SD_MOD_TIMEOUT		(75 * HZ)
-#define SD_FLUSH_TIMEOUT	(60 * HZ)
+/*
+ * Flush timeout is a multiplier over the standard device timeout which is
+ * user modifiable via sysfs but initially set to SD_TIMEOUT
+ */
+#define SD_FLUSH_TIMEOUT_MULTIPLIER	2
 #define SD_WRITE_SAME_TIMEOUT	(120 * HZ)
 
 /*
@@ -40,6 +44,8 @@ enum {
 };
 
 enum {
+	SD_DEF_XFER_BLOCKS = 0xffff,
+	SD_MAX_XFER_BLOCKS = 0xffffffff,
 	SD_MAX_WS10_BLOCKS = 0xffff,
 	SD_MAX_WS16_BLOCKS = 0x7fffff,
 };
@@ -60,6 +66,7 @@ struct scsi_disk {
 	struct gendisk	*disk;
 	atomic_t	openers;
 	sector_t	capacity;	/* size in 512-byte sectors */
+	u32		max_xfer_blocks;
 	u32		max_ws_blocks;
 	u32		max_unmap_blocks;
 	u32		unmap_granularity;
@@ -99,6 +106,12 @@ static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 	sdev_printk(prefix, (sdsk)->device, "[%s] " fmt,		\
 		    (sdsk)->disk->disk_name, ##a) :			\
 	sdev_printk(prefix, (sdsk)->device, fmt, ##a)
+
+#define sd_first_printk(prefix, sdsk, fmt, a...)			\
+	do {								\
+		if ((sdkp)->first_scan)					\
+			sd_printk(prefix, sdsk, fmt, ##a);		\
+	} while (0)
 
 static inline int scsi_medium_access_command(struct scsi_cmnd *scmd)
 {

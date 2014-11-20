@@ -4,7 +4,7 @@
  * sound/soc/dwc/designware_i2s.c
  *
  * Copyright (C) 2010 ST Microelectronics
- * Rajeev Kumar <rajeev-dlh.kumar@st.com>
+ * Rajeev Kumar <rajeevkumar.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -421,13 +421,11 @@ static int dw_i2s_probe(struct platform_device *pdev)
 					 dw_i2s_dai, 1);
 	if (ret != 0) {
 		dev_err(&pdev->dev, "not able to register dai\n");
-		goto err_set_drvdata;
+		goto err_clk_disable;
 	}
 
 	return 0;
 
-err_set_drvdata:
-	dev_set_drvdata(&pdev->dev, NULL);
 err_clk_disable:
 	clk_disable(dev->clk);
 err_clk_put:
@@ -440,7 +438,6 @@ static int dw_i2s_remove(struct platform_device *pdev)
 	struct dw_i2s_dev *dev = dev_get_drvdata(&pdev->dev);
 
 	snd_soc_unregister_component(&pdev->dev);
-	dev_set_drvdata(&pdev->dev, NULL);
 
 	clk_put(dev->clk);
 
@@ -458,7 +455,7 @@ static struct platform_driver dw_i2s_driver = {
 
 module_platform_driver(dw_i2s_driver);
 
-MODULE_AUTHOR("Rajeev Kumar <rajeev-dlh.kumar@st.com>");
+MODULE_AUTHOR("Rajeev Kumar <rajeevkumar.linux@gmail.com>");
 MODULE_DESCRIPTION("DESIGNWARE I2S SoC Interface");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:designware_i2s");

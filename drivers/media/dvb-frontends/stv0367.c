@@ -33,6 +33,9 @@
 #include "stv0367_regs.h"
 #include "stv0367_priv.h"
 
+/* Max transfer size done by I2C transfer functions */
+#define MAX_XFER_SIZE  64
+
 static int stvdebug;
 module_param_named(debug, stvdebug, int, 0644);
 
@@ -767,7 +770,7 @@ static struct st_register def0367cab[STV0367CAB_NBREGS] = {
 static
 int stv0367_writeregs(struct stv0367_state *state, u16 reg, u8 *data, int len)
 {
-	u8 buf[len + 2];
+	u8 buf[MAX_XFER_SIZE];
 	struct i2c_msg msg = {
 		.addr = state->config->demod_address,
 		.flags = 0,
@@ -775,6 +778,14 @@ int stv0367_writeregs(struct stv0367_state *state, u16 reg, u8 *data, int len)
 		.len = len + 2
 	};
 	int ret;
+
+	if (2 + len > sizeof(buf)) {
+		printk(KERN_WARNING
+		       "%s: i2c wr reg=%04x: len=%d is too big!\n",
+		       KBUILD_MODNAME, reg, len);
+		return -EINVAL;
+	}
+
 
 	buf[0] = MSB(reg);
 	buf[1] = LSB(reg);
@@ -911,18 +922,13 @@ static int stv0367ter_gate_ctrl(struct dvb_frontend *fe, int enable)
 
 static u32 stv0367_get_tuner_freq(struct dvb_frontend *fe)
 {
-	struct dvb_frontend_ops	*frontend_ops = NULL;
-	struct dvb_tuner_ops	*tuner_ops = NULL;
+	struct dvb_frontend_ops	*frontend_ops = &fe->ops;
+	struct dvb_tuner_ops	*tuner_ops = &frontend_ops->tuner_ops;
 	u32 freq = 0;
 	int err = 0;
 
 	dprintk("%s:\n", __func__);
 
-
-	if (&fe->ops)
-		frontend_ops = &fe->ops;
-	if (&frontend_ops->tuner_ops)
-		tuner_ops = &frontend_ops->tuner_ops;
 	if (tuner_ops->get_frequency) {
 		err = tuner_ops->get_frequency(fe, &freq);
 		if (err < 0) {

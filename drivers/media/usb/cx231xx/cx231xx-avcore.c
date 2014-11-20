@@ -35,7 +35,6 @@
 
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
-#include <media/v4l2-chip-ident.h>
 
 #include "cx231xx.h"
 #include "cx231xx-dif.h"
@@ -353,6 +352,7 @@ int cx231xx_afe_update_power_control(struct cx231xx *dev,
 	case CX231XX_BOARD_CNXT_RDU_253S:
 	case CX231XX_BOARD_CNXT_VIDEO_GRABBER:
 	case CX231XX_BOARD_HAUPPAUGE_EXETER:
+	case CX231XX_BOARD_HAUPPAUGE_930C_HD_1113xx:
 	case CX231XX_BOARD_HAUPPAUGE_USBLIVE2:
 	case CX231XX_BOARD_PV_PLAYTV_USB_HYBRID:
 	case CX231XX_BOARD_HAUPPAUGE_USB2_FM_PAL:

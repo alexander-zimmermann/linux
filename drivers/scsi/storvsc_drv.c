@@ -33,6 +33,7 @@
 #include <linux/device.h>
 #include <linux/hyperv.h>
 #include <linux/mempool.h>
+#include <linux/blkdev.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_host.h>
@@ -326,19 +327,23 @@ MODULE_PARM_DESC(storvsc_ringbuffer_size, "Ring buffer size (bytes)");
  */
 static int storvsc_timeout = 180;
 
-#define STORVSC_MAX_IO_REQUESTS				128
+static int msft_blist_flags = BLIST_TRY_VPD_PAGES;
 
-/*
- * In Hyper-V, each port/path/target maps to 1 scsi host adapter.  In
- * reality, the path/target is not used (ie always set to 0) so our
- * scsi host adapter essentially has 1 bus with 1 target that contains
- * up to 256 luns.
- */
-#define STORVSC_MAX_LUNS_PER_TARGET			64
-#define STORVSC_MAX_TARGETS				1
-#define STORVSC_MAX_CHANNELS				1
+#define STORVSC_MAX_IO_REQUESTS				200
 
+static void storvsc_on_channel_callback(void *context);
 
+#define STORVSC_MAX_LUNS_PER_TARGET			255
+#define STORVSC_MAX_TARGETS				2
+#define STORVSC_MAX_CHANNELS				8
+
+#define STORVSC_FC_MAX_LUNS_PER_TARGET			255
+#define STORVSC_FC_MAX_TARGETS				128
+#define STORVSC_FC_MAX_CHANNELS				8
+
+#define STORVSC_IDE_MAX_LUNS_PER_TARGET			64
+#define STORVSC_IDE_MAX_TARGETS				1
+#define STORVSC_IDE_MAX_CHANNELS			1
 
 struct storvsc_cmd_request {
 	struct list_head entry;
@@ -364,6 +369,7 @@ struct storvsc_device {
 
 	bool	 destroy;
 	bool	 drain_notify;
+	bool	 open_sub_channel;
 	atomic_t num_outstanding_req;
 	struct Scsi_Host *host;
 
@@ -755,12 +761,104 @@ static unsigned int copy_to_bounce_buffer(struct scatterlist *orig_sgl,
 	return total_copied;
 }
 
+static void handle_sc_creation(struct vmbus_channel *new_sc)
+{
+	struct hv_device *device = new_sc->primary_channel->device_obj;
+	struct storvsc_device *stor_device;
+	struct vmstorage_channel_properties props;
+
+	stor_device = get_out_stor_device(device);
+	if (!stor_device)
+		return;
+
+	if (stor_device->open_sub_channel == false)
+		return;
+
+	memset(&props, 0, sizeof(struct vmstorage_channel_properties));
+
+	vmbus_open(new_sc,
+		   storvsc_ringbuffer_size,
+		   storvsc_ringbuffer_size,
+		   (void *)&props,
+		   sizeof(struct vmstorage_channel_properties),
+		   storvsc_on_channel_callback, new_sc);
+}
+
+static void  handle_multichannel_storage(struct hv_device *device, int max_chns)
+{
+	struct storvsc_device *stor_device;
+	int num_cpus = num_online_cpus();
+	int num_sc;
+	struct storvsc_cmd_request *request;
+	struct vstor_packet *vstor_packet;
+	int ret, t;
+
+	num_sc = ((max_chns > num_cpus) ? num_cpus : max_chns);
+	stor_device = get_out_stor_device(device);
+	if (!stor_device)
+		return;
+
+	request = &stor_device->init_request;
+	vstor_packet = &request->vstor_packet;
+
+	stor_device->open_sub_channel = true;
+	/*
+	 * Establish a handler for dealing with subchannels.
+	 */
+	vmbus_set_sc_create_callback(device->channel, handle_sc_creation);
+
+	/*
+	 * Check to see if sub-channels have already been created. This
+	 * can happen when this driver is re-loaded after unloading.
+	 */
+
+	if (vmbus_are_subchannels_present(device->channel))
+		return;
+
+	stor_device->open_sub_channel = false;
+	/*
+	 * Request the host to create sub-channels.
+	 */
+	memset(request, 0, sizeof(struct storvsc_cmd_request));
+	init_completion(&request->wait_event);
+	vstor_packet->operation = VSTOR_OPERATION_CREATE_SUB_CHANNELS;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+	vstor_packet->sub_channel_count = num_sc;
+
+	ret = vmbus_sendpacket(device->channel, vstor_packet,
+			       (sizeof(struct vstor_packet) -
+			       vmscsi_size_delta),
+			       (unsigned long)request,
+			       VM_PKT_DATA_INBAND,
+			       VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if (ret != 0)
+		return;
+
+	t = wait_for_completion_timeout(&request->wait_event, 10*HZ);
+	if (t == 0)
+		return;
+
+	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETE_IO ||
+	    vstor_packet->status != 0)
+		return;
+
+	/*
+	 * Now that we created the sub-channels, invoke the check; this
+	 * may trigger the callback.
+	 */
+	stor_device->open_sub_channel = true;
+	vmbus_are_subchannels_present(device->channel);
+}
+
 static int storvsc_channel_init(struct hv_device *device)
 {
 	struct storvsc_device *stor_device;
 	struct storvsc_cmd_request *request;
 	struct vstor_packet *vstor_packet;
 	int ret, t;
+	int max_chns;
+	bool process_sub_channels = false;
 
 	stor_device = get_out_stor_device(device);
 	if (!stor_device)
@@ -855,6 +953,19 @@ static int storvsc_channel_init(struct hv_device *device)
 	    vstor_packet->status != 0)
 		goto cleanup;
 
+	/*
+	 * Check to see if multi-channel support is there.
+	 * Hosts that implement protocol version of 5.1 and above
+	 * support multi-channel.
+	 */
+	max_chns = vstor_packet->storage_channel_properties.max_channel_cnt;
+	if ((vmbus_proto_version != VERSION_WIN7) &&
+	   (vmbus_proto_version != VERSION_WS2008))  {
+		if (vstor_packet->storage_channel_properties.flags &
+		    STORAGE_CHANNEL_SUPPORTS_MULTI_CHANNEL)
+			process_sub_channels = true;
+	}
+
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
 	vstor_packet->operation = VSTOR_OPERATION_END_INITIALIZATION;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
@@ -878,6 +989,9 @@ static int storvsc_channel_init(struct hv_device *device)
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETE_IO ||
 	    vstor_packet->status != 0)
 		goto cleanup;
+
+	if (process_sub_channels)
+		handle_multichannel_storage(device, max_chns);
 
 
 cleanup:
@@ -905,6 +1019,13 @@ static void storvsc_handle_error(struct vmscsi_request *vm_srb,
 		case ATA_16:
 		case ATA_12:
 			set_host_byte(scmnd, DID_PASSTHROUGH);
+			break;
+		/*
+		 * On Some Windows hosts TEST_UNIT_READY command can return
+		 * SRB_STATUS_ERROR, let the upper level code deal with it
+		 * based on the sense information.
+		 */
+		case TEST_UNIT_READY:
 			break;
 		default:
 			set_host_byte(scmnd, DID_TARGET_FAILURE);
@@ -1100,7 +1221,8 @@ static void storvsc_on_receive(struct hv_device *device,
 
 static void storvsc_on_channel_callback(void *context)
 {
-	struct hv_device *device = (struct hv_device *)context;
+	struct vmbus_channel *channel = (struct vmbus_channel *)context;
+	struct hv_device *device;
 	struct storvsc_device *stor_device;
 	u32 bytes_recvd;
 	u64 request_id;
@@ -1108,13 +1230,17 @@ static void storvsc_on_channel_callback(void *context)
 	struct storvsc_cmd_request *request;
 	int ret;
 
+	if (channel->primary_channel != NULL)
+		device = channel->primary_channel->device_obj;
+	else
+		device = channel->device_obj;
 
 	stor_device = get_in_stor_device(device);
 	if (!stor_device)
 		return;
 
 	do {
-		ret = vmbus_recvpacket(device->channel, packet,
+		ret = vmbus_recvpacket(channel, packet,
 				       ALIGN((sizeof(struct vstor_packet) -
 					     vmscsi_size_delta), 8),
 				       &bytes_recvd, &request_id);
@@ -1155,7 +1281,7 @@ static int storvsc_connect_to_vsp(struct hv_device *device, u32 ring_size)
 			 ring_size,
 			 (void *)&props,
 			 sizeof(struct vmstorage_channel_properties),
-			 storvsc_on_channel_callback, device);
+			 storvsc_on_channel_callback, device->channel);
 
 	if (ret != 0)
 		return ret;
@@ -1207,6 +1333,7 @@ static int storvsc_do_io(struct hv_device *device,
 {
 	struct storvsc_device *stor_device;
 	struct vstor_packet *vstor_packet;
+	struct vmbus_channel *outgoing_channel;
 	int ret = 0;
 
 	vstor_packet = &request->vstor_packet;
@@ -1217,6 +1344,11 @@ static int storvsc_do_io(struct hv_device *device,
 
 
 	request->device  = device;
+	/*
+	 * Select an an appropriate channel to send the request out.
+	 */
+
+	outgoing_channel = vmbus_get_outgoing_channel(device->channel);
 
 
 	vstor_packet->flags |= REQUEST_COMPLETION_FLAG;
@@ -1234,7 +1366,7 @@ static int storvsc_do_io(struct hv_device *device,
 	vstor_packet->operation = VSTOR_OPERATION_EXECUTE_SRB;
 
 	if (request->data_buffer.len) {
-		ret = vmbus_sendpacket_multipagebuffer(device->channel,
+		ret = vmbus_sendpacket_multipagebuffer(outgoing_channel,
 				&request->data_buffer,
 				vstor_packet,
 				(sizeof(struct vstor_packet) -
@@ -1297,6 +1429,9 @@ static void storvsc_device_destroy(struct scsi_device *sdevice)
 {
 	struct stor_mem_pools *memp = sdevice->hostdata;
 
+	if (!memp)
+		return;
+
 	mempool_destroy(memp->request_mempool);
 	kmem_cache_destroy(memp->request_pool);
 	kfree(memp);
@@ -1315,6 +1450,14 @@ static int storvsc_device_configure(struct scsi_device *sdevice)
 	blk_queue_rq_timeout(sdevice->request_queue, (storvsc_timeout * HZ));
 
 	sdevice->no_write_same = 1;
+
+	/*
+	 * Add blist flags to permit the reading of the VPD pages even when
+	 * the target may claim SPC-2 compliance. MSFT targets currently
+	 * claim SPC-2 compliance while they implement post SPC-2 features.
+	 * With this patch we can correctly handle WRITE_SAME_16 issues.
+	 */
+	sdevice->sdev_bflags |= msft_blist_flags;
 
 	return 0;
 }
@@ -1393,6 +1536,16 @@ static int storvsc_host_reset_handler(struct scsi_cmnd *scmnd)
 	return SUCCESS;
 }
 
+/*
+ * The host guarantees to respond to each command, although I/O latencies might
+ * be unbounded on Azure.  Reset the timer unconditionally to give the host a
+ * chance to perform EH.
+ */
+static enum blk_eh_timer_return storvsc_eh_timed_out(struct scsi_cmnd *scmnd)
+{
+	return BLK_EH_RESET_TIMER;
+}
+
 static bool storvsc_scsi_cmd_ok(struct scsi_cmnd *scmnd)
 {
 	bool allowed = true;
@@ -1428,9 +1581,19 @@ static int storvsc_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scmnd)
 	struct vmscsi_request *vm_srb;
 	struct stor_mem_pools *memp = scmnd->device->hostdata;
 
-	if (!storvsc_scsi_cmd_ok(scmnd)) {
-		scmnd->scsi_done(scmnd);
-		return 0;
+	if (vmstor_current_major <= VMSTOR_WIN8_MAJOR) {
+		/*
+		 * On legacy hosts filter unimplemented commands.
+		 * Future hosts are expected to correctly handle
+		 * unsupported commands. Furthermore, it is
+		 * possible that some of the currently
+		 * unsupported commands maybe supported in
+		 * future versions of the host.
+		 */
+		if (!storvsc_scsi_cmd_ok(scmnd)) {
+			scmnd->scsi_done(scmnd);
+			return 0;
+		}
 	}
 
 	request_size = sizeof(struct storvsc_cmd_request);
@@ -1455,26 +1618,24 @@ static int storvsc_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scmnd)
 	vm_srb = &cmd_request->vstor_packet.vm_srb;
 	vm_srb->win8_extension.time_out_value = 60;
 
+	vm_srb->win8_extension.srb_flags |=
+		(SRB_FLAGS_QUEUE_ACTION_ENABLE |
+		SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
 
 	/* Build the SRB */
 	switch (scmnd->sc_data_direction) {
 	case DMA_TO_DEVICE:
 		vm_srb->data_in = WRITE_TYPE;
 		vm_srb->win8_extension.srb_flags |= SRB_FLAGS_DATA_OUT;
-		vm_srb->win8_extension.srb_flags |=
-			(SRB_FLAGS_QUEUE_ACTION_ENABLE |
-			SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
 		break;
 	case DMA_FROM_DEVICE:
 		vm_srb->data_in = READ_TYPE;
 		vm_srb->win8_extension.srb_flags |= SRB_FLAGS_DATA_IN;
-		vm_srb->win8_extension.srb_flags |=
-			(SRB_FLAGS_QUEUE_ACTION_ENABLE |
-			SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
 		break;
 	default:
 		vm_srb->data_in = UNKNOWN_TYPE;
-		vm_srb->win8_extension.srb_flags = 0;
+		vm_srb->win8_extension.srb_flags |= (SRB_FLAGS_DATA_IN |
+						     SRB_FLAGS_DATA_OUT);
 		break;
 	}
 
@@ -1562,11 +1723,11 @@ static struct scsi_host_template scsi_driver = {
 	.bios_param =		storvsc_get_chs,
 	.queuecommand =		storvsc_queuecommand,
 	.eh_host_reset_handler =	storvsc_host_reset_handler,
+	.eh_timed_out =		storvsc_eh_timed_out,
 	.slave_alloc =		storvsc_device_alloc,
 	.slave_destroy =	storvsc_device_destroy,
 	.slave_configure =	storvsc_device_configure,
-	.cmd_per_lun =		1,
-	/* 64 max_queue * 1 target */
+	.cmd_per_lun =		255,
 	.can_queue =		STORVSC_MAX_IO_REQUESTS*STORVSC_MAX_TARGETS,
 	.this_id =		-1,
 	/* no use setting to 0 since ll_blk_rw reset it to 1 */
@@ -1575,11 +1736,13 @@ static struct scsi_host_template scsi_driver = {
 	.use_clustering =	DISABLE_CLUSTERING,
 	/* Make sure we dont get a sg segment crosses a page boundary */
 	.dma_boundary =		PAGE_SIZE-1,
+	.no_write_same =	1,
 };
 
 enum {
 	SCSI_GUID,
 	IDE_GUID,
+	SFC_GUID,
 };
 
 static const struct hv_vmbus_device_id id_table[] = {
@@ -1590,6 +1753,11 @@ static const struct hv_vmbus_device_id id_table[] = {
 	/* IDE guid */
 	{ HV_IDE_GUID,
 	  .driver_data = IDE_GUID
+	},
+	/* Fibre Channel GUID */
+	{
+	  HV_SYNTHFC_GUID,
+	  .driver_data = SFC_GUID
 	},
 	{ },
 };
@@ -1611,19 +1779,25 @@ static int storvsc_probe(struct hv_device *device,
 	 * set state to properly communicate with the host.
 	 */
 
-	if (vmbus_proto_version == VERSION_WIN8) {
-		sense_buffer_size = POST_WIN7_STORVSC_SENSE_BUFFER_SIZE;
-		vmscsi_size_delta = 0;
-		vmstor_current_major = VMSTOR_WIN8_MAJOR;
-		vmstor_current_minor = VMSTOR_WIN8_MINOR;
-	} else {
+	switch (vmbus_proto_version) {
+	case VERSION_WS2008:
+	case VERSION_WIN7:
 		sense_buffer_size = PRE_WIN8_STORVSC_SENSE_BUFFER_SIZE;
 		vmscsi_size_delta = sizeof(struct vmscsi_win8_extension);
 		vmstor_current_major = VMSTOR_WIN7_MAJOR;
 		vmstor_current_minor = VMSTOR_WIN7_MINOR;
+		break;
+	default:
+		sense_buffer_size = POST_WIN7_STORVSC_SENSE_BUFFER_SIZE;
+		vmscsi_size_delta = 0;
+		vmstor_current_major = VMSTOR_WIN8_MAJOR;
+		vmstor_current_minor = VMSTOR_WIN8_MINOR;
+		break;
 	}
 
-
+	if (dev_id->driver_data == SFC_GUID)
+		scsi_driver.can_queue = (STORVSC_MAX_IO_REQUESTS *
+					 STORVSC_FC_MAX_TARGETS);
 	host = scsi_host_alloc(&scsi_driver,
 			       sizeof(struct hv_host_device));
 	if (!host)
@@ -1643,6 +1817,7 @@ static int storvsc_probe(struct hv_device *device,
 	}
 
 	stor_device->destroy = false;
+	stor_device->open_sub_channel = false;
 	init_waitqueue_head(&stor_device->waiting_to_drain);
 	stor_device->device = device;
 	stor_device->host = host;
@@ -1656,12 +1831,25 @@ static int storvsc_probe(struct hv_device *device,
 	host_dev->path = stor_device->path_id;
 	host_dev->target = stor_device->target_id;
 
-	/* max # of devices per target */
-	host->max_lun = STORVSC_MAX_LUNS_PER_TARGET;
-	/* max # of targets per channel */
-	host->max_id = STORVSC_MAX_TARGETS;
-	/* max # of channels */
-	host->max_channel = STORVSC_MAX_CHANNELS - 1;
+	switch (dev_id->driver_data) {
+	case SFC_GUID:
+		host->max_lun = STORVSC_FC_MAX_LUNS_PER_TARGET;
+		host->max_id = STORVSC_FC_MAX_TARGETS;
+		host->max_channel = STORVSC_FC_MAX_CHANNELS - 1;
+		break;
+
+	case SCSI_GUID:
+		host->max_lun = STORVSC_MAX_LUNS_PER_TARGET;
+		host->max_id = STORVSC_MAX_TARGETS;
+		host->max_channel = STORVSC_MAX_CHANNELS - 1;
+		break;
+
+	default:
+		host->max_lun = STORVSC_IDE_MAX_LUNS_PER_TARGET;
+		host->max_id = STORVSC_IDE_MAX_TARGETS;
+		host->max_channel = STORVSC_IDE_MAX_CHANNELS - 1;
+		break;
+	}
 	/* max cmd length */
 	host->max_cmd_len = STORVSC_MAX_CMD_LEN;
 
@@ -1750,7 +1938,6 @@ static void __exit storvsc_drv_exit(void)
 }
 
 MODULE_LICENSE("GPL");
-MODULE_VERSION(HV_DRV_VERSION);
 MODULE_DESCRIPTION("Microsoft Hyper-V virtual storage driver");
 module_init(storvsc_drv_init);
 module_exit(storvsc_drv_exit);

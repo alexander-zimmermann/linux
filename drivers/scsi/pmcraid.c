@@ -237,7 +237,7 @@ static int pmcraid_slave_configure(struct scsi_device *scsi_dev)
 		     scsi_dev->host->unique_id,
 		     scsi_dev->channel,
 		     scsi_dev->id,
-		     scsi_dev->lun);
+		     (u8)scsi_dev->lun);
 
 	if (RES_IS_GSCSI(res->cfg_entry)) {
 		scsi_dev->allow_restart = 1;
@@ -1404,11 +1404,22 @@ enum {
 };
 #define PMCRAID_AEN_CMD_MAX (__PMCRAID_AEN_CMD_MAX - 1)
 
+static struct genl_multicast_group pmcraid_mcgrps[] = {
+	{ .name = "events", /* not really used - see ID discussion below */ },
+};
+
 static struct genl_family pmcraid_event_family = {
-	.id = GENL_ID_GENERATE,
+	/*
+	 * Due to prior multicast group abuse (the code having assumed that
+	 * the family ID can be used as a multicast group ID) we need to
+	 * statically allocate a family (and thus group) ID.
+	 */
+	.id = GENL_ID_PMCRAID,
 	.name = "pmcraid",
 	.version = 1,
-	.maxattr = PMCRAID_AEN_ATTR_MAX
+	.maxattr = PMCRAID_AEN_ATTR_MAX,
+	.mcgrps = pmcraid_mcgrps,
+	.n_mcgrps = ARRAY_SIZE(pmcraid_mcgrps),
 };
 
 /**
@@ -1511,8 +1522,8 @@ static int pmcraid_notify_aen(
 		return result;
 	}
 
-	result =
-		genlmsg_multicast(skb, 0, pmcraid_event_family.id, GFP_ATOMIC);
+	result = genlmsg_multicast(&pmcraid_event_family, skb,
+				   0, 0, GFP_ATOMIC);
 
 	/* If there are no listeners, genlmsg_multicast may return non-zero
 	 * value.
@@ -4202,9 +4213,9 @@ static ssize_t pmcraid_store_log_level(
 {
 	struct Scsi_Host *shost;
 	struct pmcraid_instance *pinstance;
-	unsigned long val;
+	u8 val;
 
-	if (strict_strtoul(buf, 10, &val))
+	if (kstrtou8(buf, 10, &val))
 		return -EINVAL;
 	/* log-level should be from 0 to 2 */
 	if (val > 2)
@@ -4314,6 +4325,7 @@ static struct scsi_host_template pmcraid_host_template = {
 	.this_id = -1,
 	.sg_tablesize = PMCRAID_MAX_IOADLS,
 	.max_sectors = PMCRAID_IOA_MAX_SECTORS,
+	.no_write_same = 1,
 	.cmd_per_lun = PMCRAID_MAX_CMD_PER_LUN,
 	.use_clustering = ENABLE_CLUSTERING,
 	.shost_attrs = pmcraid_host_attrs,
@@ -6049,7 +6061,6 @@ out_release_regions:
 
 out_disable_device:
 	atomic_dec(&pmcraid_adapter_count);
-	pci_set_drvdata(pdev, NULL);
 	pci_disable_device(pdev);
 	return -ENODEV;
 }

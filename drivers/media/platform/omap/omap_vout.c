@@ -165,7 +165,6 @@ static int omap_vout_try_format(struct v4l2_pix_format *pix)
 
 	pix->pixelformat = omap_formats[ifmt].pixelformat;
 	pix->field = V4L2_FIELD_ANY;
-	pix->priv = 0;
 
 	switch (pix->pixelformat) {
 	case V4L2_PIX_FMT_YUYV:
@@ -335,8 +334,6 @@ static int video_mode_to_dss_mode(struct omap_vout_device *vout)
 	ovl = ovid->overlays[0];
 
 	switch (pix->pixelformat) {
-	case 0:
-		break;
 	case V4L2_PIX_FMT_YUYV:
 		mode = OMAP_DSS_COLOR_YUV2;
 		break;
@@ -358,6 +355,7 @@ static int video_mode_to_dss_mode(struct omap_vout_device *vout)
 		break;
 	default:
 		mode = -EINVAL;
+		break;
 	}
 	return mode;
 }
@@ -602,6 +600,7 @@ static void omap_vout_isr(void *arg, unsigned int irqstatus)
 	switch (cur_display->type) {
 	case OMAP_DISPLAY_TYPE_DSI:
 	case OMAP_DISPLAY_TYPE_DPI:
+	case OMAP_DISPLAY_TYPE_DVI:
 		if (mgr_id == OMAP_DSS_CHANNEL_LCD)
 			irq = DISPC_IRQ_VSYNC;
 		else if (mgr_id == OMAP_DSS_CHANNEL_LCD2)
@@ -1896,7 +1895,6 @@ static int __init omap_vout_setup_video_data(struct omap_vout_device *vout)
 	pix->field = V4L2_FIELD_ANY;
 	pix->bytesperline = pix->width * 2;
 	pix->sizeimage = pix->bytesperline * pix->height;
-	pix->priv = 0;
 	pix->colorspace = V4L2_COLORSPACE_JPEG;
 
 	vout->bpp = RGB565_BPP;

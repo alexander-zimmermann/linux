@@ -131,43 +131,40 @@ static inline int arch_irqs_disabled(void)
 	return arch_irqs_disabled_flags(arch_local_save_flags());
 }
 
-static inline void arch_mask_irq(unsigned int irq)
-{
-	unsigned int ienb;
+#else
 
-	ienb = read_aux_reg(AUX_IENABLE);
-	ienb &= ~(1 << irq);
-	write_aux_reg(AUX_IENABLE, ienb);
-}
+#ifdef CONFIG_TRACE_IRQFLAGS
 
-static inline void arch_unmask_irq(unsigned int irq)
-{
-	unsigned int ienb;
+.macro TRACE_ASM_IRQ_DISABLE
+	bl	trace_hardirqs_off
+.endm
 
-	ienb = read_aux_reg(AUX_IENABLE);
-	ienb |= (1 << irq);
-	write_aux_reg(AUX_IENABLE, ienb);
-}
+.macro TRACE_ASM_IRQ_ENABLE
+	bl	trace_hardirqs_on
+.endm
 
 #else
+
+.macro TRACE_ASM_IRQ_DISABLE
+.endm
+
+.macro TRACE_ASM_IRQ_ENABLE
+.endm
+
+#endif
 
 .macro IRQ_DISABLE  scratch
 	lr	\scratch, [status32]
 	bic	\scratch, \scratch, (STATUS_E1_MASK | STATUS_E2_MASK)
 	flag	\scratch
-.endm
-
-.macro IRQ_DISABLE_SAVE  scratch, save
-	lr	\scratch, [status32]
-	mov	\save, \scratch		/* Make a copy */
-	bic	\scratch, \scratch, (STATUS_E1_MASK | STATUS_E2_MASK)
-	flag	\scratch
+	TRACE_ASM_IRQ_DISABLE
 .endm
 
 .macro IRQ_ENABLE  scratch
 	lr	\scratch, [status32]
 	or	\scratch, \scratch, (STATUS_E1_MASK | STATUS_E2_MASK)
 	flag	\scratch
+	TRACE_ASM_IRQ_ENABLE
 .endm
 
 #endif	/* __ASSEMBLY__ */

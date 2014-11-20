@@ -359,10 +359,7 @@ static int sh_veu_context_init(struct sh_veu_dev *veu)
 	veu->m2m_ctx = v4l2_m2m_ctx_init(veu->m2m_dev, veu,
 					 sh_veu_queue_init);
 
-	if (IS_ERR(veu->m2m_ctx))
-		return PTR_ERR(veu->m2m_ctx);
-
-	return 0;
+	return PTR_ERR_OR_ZERO(veu->m2m_ctx);
 }
 
 static int sh_veu_querycap(struct file *file, void *priv,
@@ -428,7 +425,6 @@ static int sh_veu_g_fmt(struct sh_veu_file *veu_file, struct v4l2_format *f)
 	pix->bytesperline	= vfmt->bytesperline;
 	pix->sizeimage		= vfmt->bytesperline * pix->height *
 		vfmt->fmt->depth / vfmt->fmt->ydepth;
-	pix->priv		= 0;
 	dev_dbg(veu->dev, "%s(): type: %d, size %u @ %ux%u, fmt %x\n", __func__,
 		f->type, pix->sizeimage, pix->width, pix->height, pix->pixelformat);
 
@@ -476,7 +472,6 @@ static int sh_veu_try_fmt(struct v4l2_format *f, const struct sh_veu_format *fmt
 
 	pix->pixelformat	= fmt->fourcc;
 	pix->colorspace		= sh_veu_4cc2cspace(pix->pixelformat);
-	pix->priv		= 0;
 
 	pr_debug("%s(): type: %d, size %u\n", __func__, f->type, pix->sizeimage);
 

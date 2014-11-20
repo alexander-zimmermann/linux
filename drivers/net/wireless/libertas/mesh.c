@@ -1000,7 +1000,7 @@ static int lbs_add_mesh(struct lbs_private *priv)
 		goto done;
 	}
 
-	mesh_dev = alloc_netdev(0, "msh%d", ether_setup);
+	mesh_dev = alloc_netdev(0, "msh%d", NET_NAME_UNKNOWN, ether_setup);
 	if (!mesh_dev) {
 		lbs_deb_mesh("init mshX device failed\n");
 		ret = -ENOMEM;
@@ -1017,7 +1017,7 @@ static int lbs_add_mesh(struct lbs_private *priv)
 
 	mesh_dev->netdev_ops = &mesh_netdev_ops;
 	mesh_dev->ethtool_ops = &lbs_ethtool_ops;
-	memcpy(mesh_dev->dev_addr, priv->dev->dev_addr, ETH_ALEN);
+	eth_hw_addr_inherit(mesh_dev, priv->dev);
 
 	SET_NETDEV_DEV(priv->mesh_dev, priv->dev->dev.parent);
 

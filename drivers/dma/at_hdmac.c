@@ -294,14 +294,16 @@ static int atc_get_bytes_left(struct dma_chan *chan)
 			ret = -EINVAL;
 			goto out;
 		}
-		atchan->remain_desc -= (desc_cur->lli.ctrla & ATC_BTSIZE_MAX)
-						<< (desc_first->tx_width);
-		if (atchan->remain_desc < 0) {
+
+		count = (desc_cur->lli.ctrla & ATC_BTSIZE_MAX)
+			<< desc_first->tx_width;
+		if (atchan->remain_desc < count) {
 			ret = -EINVAL;
 			goto out;
-		} else {
-			ret = atchan->remain_desc;
 		}
+
+		atchan->remain_desc -= count;
+		ret = atchan->remain_desc;
 	} else {
 		/*
 		 * Get residual bytes when current
@@ -344,31 +346,7 @@ atc_chain_complete(struct at_dma_chan *atchan, struct at_desc *desc)
 	/* move myself to free_list */
 	list_move(&desc->desc_node, &atchan->free_list);
 
-	/* unmap dma addresses (not on slave channels) */
-	if (!atchan->chan_common.private) {
-		struct device *parent = chan2parent(&atchan->chan_common);
-		if (!(txd->flags & DMA_COMPL_SKIP_DEST_UNMAP)) {
-			if (txd->flags & DMA_COMPL_DEST_UNMAP_SINGLE)
-				dma_unmap_single(parent,
-						desc->lli.daddr,
-						desc->len, DMA_FROM_DEVICE);
-			else
-				dma_unmap_page(parent,
-						desc->lli.daddr,
-						desc->len, DMA_FROM_DEVICE);
-		}
-		if (!(txd->flags & DMA_COMPL_SKIP_SRC_UNMAP)) {
-			if (txd->flags & DMA_COMPL_SRC_UNMAP_SINGLE)
-				dma_unmap_single(parent,
-						desc->lli.saddr,
-						desc->len, DMA_TO_DEVICE);
-			else
-				dma_unmap_page(parent,
-						desc->lli.saddr,
-						desc->len, DMA_TO_DEVICE);
-		}
-	}
-
+	dma_descriptor_unmap(txd);
 	/* for cyclic transfers,
 	 * no need to replay callback function while stopping */
 	if (!atc_chan_is_cyclic(atchan)) {
@@ -917,12 +895,11 @@ atc_dma_cyclic_fill_desc(struct dma_chan *chan, struct at_desc *desc,
  * @period_len: number of bytes for each period
  * @direction: transfer direction, to or from device
  * @flags: tx descriptor status flags
- * @context: transfer context (ignored)
  */
 static struct dma_async_tx_descriptor *
 atc_prep_dma_cyclic(struct dma_chan *chan, dma_addr_t buf_addr, size_t buf_len,
 		size_t period_len, enum dma_transfer_direction direction,
-		unsigned long flags, void *context)
+		unsigned long flags)
 {
 	struct at_dma_chan	*atchan = to_at_dma_chan(chan);
 	struct at_dma_slave	*atslave = chan->private;
@@ -1102,7 +1079,7 @@ atc_tx_status(struct dma_chan *chan,
 	int bytes = 0;
 
 	ret = dma_cookie_status(chan, cookie, txstate);
-	if (ret == DMA_SUCCESS)
+	if (ret == DMA_COMPLETE)
 		return ret;
 	/*
 	 * There's no point calculating the residue if there's
@@ -1593,7 +1570,6 @@ static int at_dma_remove(struct platform_device *pdev)
 
 		/* Disable interrupts */
 		atc_disable_chan_irq(atdma, chan->chan_id);
-		tasklet_disable(&atchan->tasklet);
 
 		tasklet_kill(&atchan->tasklet);
 		list_del(&chan->device_node);

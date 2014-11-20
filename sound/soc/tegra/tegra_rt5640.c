@@ -51,8 +51,7 @@ static int tegra_rt5640_asoc_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
-	struct snd_soc_codec *codec = codec_dai->codec;
-	struct snd_soc_card *card = codec->card;
+	struct snd_soc_card *card = rtd->card;
 	struct tegra_rt5640 *machine = snd_soc_card_get_drvdata(card);
 	int srate, mclk;
 	int err;
@@ -99,6 +98,7 @@ static struct snd_soc_jack_gpio tegra_rt5640_hp_jack_gpio = {
 static const struct snd_soc_dapm_widget tegra_rt5640_dapm_widgets[] = {
 	SND_SOC_DAPM_HP("Headphones", NULL),
 	SND_SOC_DAPM_SPK("Speakers", NULL),
+	SND_SOC_DAPM_MIC("Mic Jack", NULL),
 };
 
 static const struct snd_kcontrol_new tegra_rt5640_controls[] = {
@@ -109,7 +109,7 @@ static int tegra_rt5640_asoc_init(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_codec *codec = codec_dai->codec;
-	struct tegra_rt5640 *machine = snd_soc_card_get_drvdata(codec->card);
+	struct tegra_rt5640 *machine = snd_soc_card_get_drvdata(rtd->card);
 
 	snd_soc_jack_new(codec, "Headphones", SND_JACK_HEADPHONE,
 			 &tegra_rt5640_hp_jack);
@@ -122,6 +122,18 @@ static int tegra_rt5640_asoc_init(struct snd_soc_pcm_runtime *rtd)
 		snd_soc_jack_add_gpios(&tegra_rt5640_hp_jack,
 						1,
 						&tegra_rt5640_hp_jack_gpio);
+	}
+
+	return 0;
+}
+
+static int tegra_rt5640_card_remove(struct snd_soc_card *card)
+{
+	struct tegra_rt5640 *machine = snd_soc_card_get_drvdata(card);
+
+	if (gpio_is_valid(machine->gpio_hp_det)) {
+		snd_soc_jack_free_gpios(&tegra_rt5640_hp_jack, 1,
+					&tegra_rt5640_hp_jack_gpio);
 	}
 
 	return 0;
@@ -140,6 +152,7 @@ static struct snd_soc_dai_link tegra_rt5640_dai = {
 static struct snd_soc_card snd_soc_tegra_rt5640 = {
 	.name = "tegra-rt5640",
 	.owner = THIS_MODULE,
+	.remove = tegra_rt5640_card_remove,
 	.dai_link = &tegra_rt5640_dai,
 	.num_links = 1,
 	.controls = tegra_rt5640_controls,
@@ -222,9 +235,6 @@ static int tegra_rt5640_remove(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 	struct tegra_rt5640 *machine = snd_soc_card_get_drvdata(card);
-
-	snd_soc_jack_free_gpios(&tegra_rt5640_hp_jack, 1,
-				&tegra_rt5640_hp_jack_gpio);
 
 	snd_soc_unregister_card(card);
 

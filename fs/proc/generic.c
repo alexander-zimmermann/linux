@@ -27,7 +27,7 @@
 
 #include "internal.h"
 
-DEFINE_SPINLOCK(proc_subdir_lock);
+static DEFINE_SPINLOCK(proc_subdir_lock);
 
 static int proc_match(unsigned int len, const char *name, struct proc_dir_entry *de)
 {
@@ -49,8 +49,7 @@ static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 	setattr_copy(inode, iattr);
 	mark_inode_dirty(inode);
 
-	de->uid = inode->i_uid;
-	de->gid = inode->i_gid;
+	proc_set_user(de, inode->i_uid, inode->i_gid);
 	de->mode = inode->i_mode;
 	return 0;
 }
@@ -175,22 +174,6 @@ static const struct inode_operations proc_link_inode_operations = {
 };
 
 /*
- * As some entries in /proc are volatile, we want to 
- * get rid of unused dentries.  This could be made 
- * smarter: we could keep a "volatile" flag in the 
- * inode to indicate which ones to keep.
- */
-static int proc_delete_dentry(const struct dentry * dentry)
-{
-	return 1;
-}
-
-static const struct dentry_operations proc_dentry_operations =
-{
-	.d_delete	= proc_delete_dentry,
-};
-
-/*
  * Don't create negative dentries here, return -ENOENT by hand
  * instead.
  */
@@ -209,7 +192,7 @@ struct dentry *proc_lookup_de(struct proc_dir_entry *de, struct inode *dir,
 			inode = proc_get_inode(dir->i_sb, de);
 			if (!inode)
 				return ERR_PTR(-ENOMEM);
-			d_set_d_op(dentry, &proc_dentry_operations);
+			d_set_d_op(dentry, &simple_dentry_operations);
 			d_add(dentry, inode);
 			return NULL;
 		}
@@ -271,7 +254,7 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *file,
 		de = next;
 	} while (de);
 	spin_unlock(&proc_subdir_lock);
-	return 0;
+	return 1;
 }
 
 int proc_readdir(struct file *file, struct dir_context *ctx)
@@ -347,28 +330,28 @@ static struct proc_dir_entry *__proc_create(struct proc_dir_entry **parent,
 					  nlink_t nlink)
 {
 	struct proc_dir_entry *ent = NULL;
-	const char *fn = name;
-	unsigned int len;
-
-	/* make sure name is valid */
-	if (!name || !strlen(name))
-		goto out;
+	const char *fn;
+	struct qstr qstr;
 
 	if (xlate_proc_name(name, parent, &fn) != 0)
 		goto out;
+	qstr.name = fn;
+	qstr.len = strlen(fn);
+	if (qstr.len == 0 || qstr.len >= 256) {
+		WARN(1, "name len %u\n", qstr.len);
+		return NULL;
+	}
+	if (*parent == &proc_root && name_to_int(&qstr) != ~0U) {
+		WARN(1, "create '/proc/%s' by hand\n", qstr.name);
+		return NULL;
+	}
 
-	/* At this point there must not be any '/' characters beyond *fn */
-	if (strchr(fn, '/'))
-		goto out;
-
-	len = strlen(fn);
-
-	ent = kzalloc(sizeof(struct proc_dir_entry) + len + 1, GFP_KERNEL);
+	ent = kzalloc(sizeof(struct proc_dir_entry) + qstr.len + 1, GFP_KERNEL);
 	if (!ent)
 		goto out;
 
-	memcpy(ent->name, fn, len + 1);
-	ent->namelen = len;
+	memcpy(ent->name, fn, qstr.len + 1);
+	ent->namelen = qstr.len;
 	ent->mode = mode;
 	ent->nlink = nlink;
 	atomic_set(&ent->count, 1);

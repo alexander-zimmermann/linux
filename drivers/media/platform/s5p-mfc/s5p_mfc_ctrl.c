@@ -38,19 +38,16 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 	dev->fw_virt_addr = dma_alloc_coherent(dev->mem_dev_l, dev->fw_size,
 					&dev->bank1, GFP_KERNEL);
 
-	if (IS_ERR_OR_NULL(dev->fw_virt_addr)) {
-		dev->fw_virt_addr = NULL;
+	if (!dev->fw_virt_addr) {
 		mfc_err("Allocating bitprocessor buffer failed\n");
 		return -ENOMEM;
 	}
-
-	dev->bank1 = dev->bank1;
 
 	if (HAS_PORTNUM(dev) && IS_TWOPORT(dev)) {
 		bank2_virt = dma_alloc_coherent(dev->mem_dev_r, 1 << MFC_BASE_ALIGN_ORDER,
 					&bank2_dma_addr, GFP_KERNEL);
 
-		if (IS_ERR(dev->fw_virt_addr)) {
+		if (!bank2_virt) {
 			mfc_err("Allocating bank2 base failed\n");
 			dma_free_coherent(dev->mem_dev_l, dev->fw_size,
 				dev->fw_virt_addr, dev->bank1);
@@ -69,7 +66,7 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 
 	} else {
 		/* In this case bank2 can point to the same address as bank1.
-		 * Firmware will always occupy the beggining of this area so it is
+		 * Firmware will always occupy the beginning of this area so it is
 		 * impossible having a video frame buffer with zero address. */
 		dev->bank2 = dev->bank1;
 	}
@@ -80,47 +77,23 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 int s5p_mfc_load_firmware(struct s5p_mfc_dev *dev)
 {
 	struct firmware *fw_blob;
-	int err;
+	int i, err = -EINVAL;
 
 	/* Firmare has to be present as a separate file or compiled
 	 * into kernel. */
 	mfc_debug_enter();
 
-	err = request_firmware((const struct firmware **)&fw_blob,
-				     dev->variant->fw_name, dev->v4l2_dev.dev);
-	if (err != 0) {
-		mfc_err("Firmware is not present in the /lib/firmware directory nor compiled in kernel\n");
-		return -EINVAL;
+	for (i = MFC_FW_MAX_VERSIONS - 1; i >= 0; i--) {
+		if (!dev->variant->fw_name[i])
+			continue;
+		err = request_firmware((const struct firmware **)&fw_blob,
+				dev->variant->fw_name[i], dev->v4l2_dev.dev);
+		if (!err) {
+			dev->fw_ver = (enum s5p_mfc_fw_ver) i;
+			break;
+		}
 	}
-	if (fw_blob->size > dev->fw_size) {
-		mfc_err("MFC firmware is too big to be loaded\n");
-		release_firmware(fw_blob);
-		return -ENOMEM;
-	}
-	if (!dev->fw_virt_addr) {
-		mfc_err("MFC firmware is not allocated\n");
-		release_firmware(fw_blob);
-		return -EINVAL;
-	}
-	memcpy(dev->fw_virt_addr, fw_blob->data, fw_blob->size);
-	wmb();
-	release_firmware(fw_blob);
-	mfc_debug_leave();
-	return 0;
-}
 
-/* Reload firmware to MFC */
-int s5p_mfc_reload_firmware(struct s5p_mfc_dev *dev)
-{
-	struct firmware *fw_blob;
-	int err;
-
-	/* Firmare has to be present as a separate file or compiled
-	 * into kernel. */
-	mfc_debug_enter();
-
-	err = request_firmware((const struct firmware **)&fw_blob,
-				     dev->variant->fw_name, dev->v4l2_dev.dev);
 	if (err != 0) {
 		mfc_err("Firmware is not present in the /lib/firmware directory nor compiled in kernel\n");
 		return -EINVAL;
@@ -164,7 +137,7 @@ int s5p_mfc_reset(struct s5p_mfc_dev *dev)
 
 	mfc_debug_enter();
 
-	if (IS_MFCV6(dev)) {
+	if (IS_MFCV6_PLUS(dev)) {
 		/* Reset IP */
 		/*  except RISC, reset */
 		mfc_write(dev, 0xFEE, S5P_FIMV_MFC_RESET_V6);
@@ -213,7 +186,7 @@ int s5p_mfc_reset(struct s5p_mfc_dev *dev)
 
 static inline void s5p_mfc_init_memctrl(struct s5p_mfc_dev *dev)
 {
-	if (IS_MFCV6(dev)) {
+	if (IS_MFCV6_PLUS(dev)) {
 		mfc_write(dev, dev->bank1, S5P_FIMV_RISC_BASE_ADDRESS_V6);
 		mfc_debug(2, "Base Address : %08x\n", dev->bank1);
 	} else {
@@ -226,7 +199,7 @@ static inline void s5p_mfc_init_memctrl(struct s5p_mfc_dev *dev)
 
 static inline void s5p_mfc_clear_cmds(struct s5p_mfc_dev *dev)
 {
-	if (IS_MFCV6(dev)) {
+	if (IS_MFCV6_PLUS(dev)) {
 		/* Zero initialization should be done before RESET.
 		 * Nothing to do here. */
 	} else {
@@ -264,7 +237,7 @@ int s5p_mfc_init_hw(struct s5p_mfc_dev *dev)
 	s5p_mfc_clear_cmds(dev);
 	/* 3. Release reset signal to the RISC */
 	s5p_mfc_clean_dev_int_flags(dev);
-	if (IS_MFCV6(dev))
+	if (IS_MFCV6_PLUS(dev))
 		mfc_write(dev, 0x1, S5P_FIMV_RISC_ON_V6);
 	else
 		mfc_write(dev, 0x3ff, S5P_FIMV_SW_RESET);
@@ -301,7 +274,7 @@ int s5p_mfc_init_hw(struct s5p_mfc_dev *dev)
 		s5p_mfc_clock_off();
 		return -EIO;
 	}
-	if (IS_MFCV6(dev))
+	if (IS_MFCV6_PLUS(dev))
 		ver = mfc_read(dev, S5P_FIMV_FW_VERSION_V6);
 	else
 		ver = mfc_read(dev, S5P_FIMV_FW_VERSION);
@@ -380,7 +353,7 @@ int s5p_mfc_wakeup(struct s5p_mfc_dev *dev)
 		return ret;
 	}
 	/* 4. Release reset signal to the RISC */
-	if (IS_MFCV6(dev))
+	if (IS_MFCV6_PLUS(dev))
 		mfc_write(dev, 0x1, S5P_FIMV_RISC_ON_V6);
 	else
 		mfc_write(dev, 0x3ff, S5P_FIMV_SW_RESET);
@@ -402,3 +375,65 @@ int s5p_mfc_wakeup(struct s5p_mfc_dev *dev)
 	return 0;
 }
 
+int s5p_mfc_open_mfc_inst(struct s5p_mfc_dev *dev, struct s5p_mfc_ctx *ctx)
+{
+	int ret = 0;
+
+	ret = s5p_mfc_hw_call(dev->mfc_ops, alloc_instance_buffer, ctx);
+	if (ret) {
+		mfc_err("Failed allocating instance buffer\n");
+		goto err;
+	}
+
+	if (ctx->type == MFCINST_DECODER) {
+		ret = s5p_mfc_hw_call(dev->mfc_ops,
+					alloc_dec_temp_buffers, ctx);
+		if (ret) {
+			mfc_err("Failed allocating temporary buffers\n");
+			goto err_free_inst_buf;
+		}
+	}
+
+	set_work_bit_irqsave(ctx);
+	s5p_mfc_clean_ctx_int_flags(ctx);
+	s5p_mfc_hw_call(dev->mfc_ops, try_run, dev);
+	if (s5p_mfc_wait_for_done_ctx(ctx,
+		S5P_MFC_R2H_CMD_OPEN_INSTANCE_RET, 0)) {
+		/* Error or timeout */
+		mfc_err("Error getting instance from hardware\n");
+		ret = -EIO;
+		goto err_free_desc_buf;
+	}
+
+	mfc_debug(2, "Got instance number: %d\n", ctx->inst_no);
+	return ret;
+
+err_free_desc_buf:
+	if (ctx->type == MFCINST_DECODER)
+		s5p_mfc_hw_call(dev->mfc_ops, release_dec_desc_buffer, ctx);
+err_free_inst_buf:
+	s5p_mfc_hw_call(dev->mfc_ops, release_instance_buffer, ctx);
+err:
+	return ret;
+}
+
+void s5p_mfc_close_mfc_inst(struct s5p_mfc_dev *dev, struct s5p_mfc_ctx *ctx)
+{
+	ctx->state = MFCINST_RETURN_INST;
+	set_work_bit_irqsave(ctx);
+	s5p_mfc_clean_ctx_int_flags(ctx);
+	s5p_mfc_hw_call(dev->mfc_ops, try_run, dev);
+	/* Wait until instance is returned or timeout occurred */
+	if (s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_MFC_R2H_CMD_CLOSE_INSTANCE_RET, 0))
+		mfc_err("Err returning instance\n");
+
+	/* Free resources */
+	s5p_mfc_hw_call(dev->mfc_ops, release_codec_buffers, ctx);
+	s5p_mfc_hw_call(dev->mfc_ops, release_instance_buffer, ctx);
+	if (ctx->type == MFCINST_DECODER)
+		s5p_mfc_hw_call(dev->mfc_ops, release_dec_desc_buffer, ctx);
+
+	ctx->inst_no = MFC_NO_INSTANCE_SET;
+	ctx->state = MFCINST_FREE;
+}

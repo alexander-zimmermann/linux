@@ -30,16 +30,19 @@ struct usbnet {
 	struct driver_info	*driver_info;
 	const char		*driver_name;
 	void			*driver_priv;
-	wait_queue_head_t	*wait;
+	wait_queue_head_t	wait;
 	struct mutex		phy_mutex;
 	unsigned char		suspend_count;
 	unsigned char		pkt_cnt, pkt_err;
+	unsigned short		rx_qlen, tx_qlen;
+	unsigned		can_dma_sg:1;
 
 	/* i/o info: pipes etc */
 	unsigned		in, out;
 	struct usb_host_endpoint *status;
 	unsigned		maxpacket;
 	struct timer_list	delay;
+	const char		*padding_pkt;
 
 	/* protocol/interface state */
 	struct net_device	*net;
@@ -144,6 +147,9 @@ struct driver_info {
 	/* fixup tx packet (add framing) */
 	struct sk_buff	*(*tx_fixup)(struct usbnet *dev,
 				struct sk_buff *skb, gfp_t flags);
+
+	/* recover from timeout */
+	void	(*recover)(struct usbnet *dev);
 
 	/* early initialization code, can sleep. This is for minidrivers
 	 * having 'subminidrivers' that need to do extra initialization
@@ -252,5 +258,7 @@ extern void usbnet_link_change(struct usbnet *, bool, bool);
 
 extern int usbnet_status_start(struct usbnet *dev, gfp_t mem_flags);
 extern void usbnet_status_stop(struct usbnet *dev);
+
+extern void usbnet_update_max_qlen(struct usbnet *dev);
 
 #endif /* __LINUX_USB_USBNET_H */

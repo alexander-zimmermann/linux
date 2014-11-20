@@ -162,7 +162,6 @@ extern u64 timecounter_cyc2time(struct timecounter *tc,
  * @archdata:		arch-specific data
  * @suspend:		suspend function for the clocksource, if necessary
  * @resume:		resume function for the clocksource, if necessary
- * @cycle_last:		most recent cycle counter value seen by ::read()
  * @owner:		module reference, must be set by clocksource in modules
  */
 struct clocksource {
@@ -171,7 +170,6 @@ struct clocksource {
 	 * clocksource itself is cacheline aligned.
 	 */
 	cycle_t (*read)(struct clocksource *cs);
-	cycle_t cycle_last;
 	cycle_t mask;
 	u32 mult;
 	u32 shift;
@@ -292,6 +290,8 @@ extern void clocksource_resume(void);
 extern struct clocksource * __init __weak clocksource_default_clock(void);
 extern void clocksource_mark_unstable(struct clocksource *cs);
 
+extern u64
+clocks_calc_max_nsecs(u32 mult, u32 shift, u32 maxadj, u64 mask);
 extern void
 clocks_calc_mult_shift(u32 *mult, u32 *shift, u32 from, u32 to, u32 minsec);
 
@@ -337,23 +337,13 @@ extern int clocksource_mmio_init(void __iomem *, const char *,
 
 extern int clocksource_i8253_init(void);
 
-struct device_node;
-typedef void(*clocksource_of_init_fn)(struct device_node *);
+#define CLOCKSOURCE_OF_DECLARE(name, compat, fn) \
+	OF_DECLARE_1(clksrc, name, compat, fn)
+
 #ifdef CONFIG_CLKSRC_OF
 extern void clocksource_of_init(void);
-
-#define CLOCKSOURCE_OF_DECLARE(name, compat, fn)			\
-	static const struct of_device_id __clksrc_of_table_##name	\
-		__used __section(__clksrc_of_table)			\
-		 = { .compatible = compat,				\
-		     .data = (fn == (clocksource_of_init_fn)NULL) ? fn : fn }
 #else
 static inline void clocksource_of_init(void) {}
-#define CLOCKSOURCE_OF_DECLARE(name, compat, fn)			\
-	static const struct of_device_id __clksrc_of_table_##name	\
-		__attribute__((unused))					\
-		 = { .compatible = compat,				\
-		     .data = (fn == (clocksource_of_init_fn)NULL) ? fn : fn }
 #endif
 
 #endif /* _LINUX_CLOCKSOURCE_H */

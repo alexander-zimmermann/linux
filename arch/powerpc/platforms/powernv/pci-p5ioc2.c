@@ -92,14 +92,14 @@ static void pnv_pci_p5ioc2_dma_dev_setup(struct pnv_phb *phb,
 				pci_domain_nr(phb->hose->bus), phb->opal_id);
 	}
 
-	set_iommu_table_base(&pdev->dev, &phb->p5ioc2.iommu_table);
+	set_iommu_table_base_and_group(&pdev->dev, &phb->p5ioc2.iommu_table);
 }
 
 static void __init pnv_pci_init_p5ioc2_phb(struct device_node *np, u64 hub_id,
 					   void *tce_mem, u64 tce_size)
 {
 	struct pnv_phb *phb;
-	const u64 *prop64;
+	const __be64 *prop64;
 	u64 phb_id;
 	int64_t rc;
 	static int primary = 1;
@@ -172,13 +172,14 @@ static void __init pnv_pci_init_p5ioc2_phb(struct device_node *np, u64 hub_id,
 	/* Setup TCEs */
 	phb->dma_dev_setup = pnv_pci_p5ioc2_dma_dev_setup;
 	pnv_pci_setup_iommu_table(&phb->p5ioc2.iommu_table,
-				  tce_mem, tce_size, 0);
+				  tce_mem, tce_size, 0,
+				  IOMMU_PAGE_SHIFT_4K);
 }
 
 void __init pnv_pci_init_p5ioc2_hub(struct device_node *np)
 {
 	struct device_node *phbn;
-	const u64 *prop64;
+	const __be64 *prop64;
 	u64 hub_id;
 	void *tce_mem;
 	uint64_t tce_per_phb;

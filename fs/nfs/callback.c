@@ -164,8 +164,7 @@ nfs41_callback_up(struct svc_serv *serv)
 		svc_xprt_put(serv->sv_bc_xprt);
 		serv->sv_bc_xprt = NULL;
 	}
-	dprintk("--> %s return %ld\n", __func__,
-		IS_ERR(rqstp) ? PTR_ERR(rqstp) : 0);
+	dprintk("--> %s return %d\n", __func__, PTR_ERR_OR_ZERO(rqstp));
 	return rqstp;
 }
 
@@ -428,6 +427,18 @@ check_gss_callback_principal(struct nfs_client *clp, struct svc_rqst *rqstp)
 	 */
 	if (p == NULL)
 		return 0;
+
+	/*
+	 * Did we get the acceptor from userland during the SETCLIENID
+	 * negotiation?
+	 */
+	if (clp->cl_acceptor)
+		return !strcmp(p, clp->cl_acceptor);
+
+	/*
+	 * Otherwise try to verify it using the cl_hostname. Note that this
+	 * doesn't work if a non-canonical hostname was used in the devname.
+	 */
 
 	/* Expect a GSS_C_NT_HOSTBASED_NAME like "nfs@serverhostname" */
 

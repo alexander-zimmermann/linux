@@ -16,8 +16,6 @@
 #define UART1_IRQ	10
 #define UART2_IRQ	11
 
-#define VMAC_IRQ	6
-
 #define IDE_IRQ		13
 #define PCI_IRQ		14
 #define PS2_IRQ		15
@@ -25,7 +23,5 @@
 #ifdef CONFIG_SMP
 #define IDU_INTERRUPT_0 16
 #endif
-
-extern void __init plat_fpga_init_IRQ(void);
 
 #endif

@@ -31,8 +31,8 @@
 #include <asm/cacheflush.h>
 #include <asm/sizes.h>
 
-#include <mach/iommu_hw-8xxx.h>
-#include <mach/iommu.h>
+#include "msm_iommu_hw-8xxx.h"
+#include "msm_iommu.h"
 
 #define MRC(reg, processor, op1, crn, crm, op2)				\
 __asm__ __volatile__ (							\
@@ -674,7 +674,7 @@ fail:
 	return 0;
 }
 
-static struct iommu_ops msm_iommu_ops = {
+static const struct iommu_ops msm_iommu_ops = {
 	.domain_init = msm_iommu_domain_init,
 	.domain_destroy = msm_iommu_domain_destroy,
 	.attach_dev = msm_iommu_attach_dev,

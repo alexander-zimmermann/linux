@@ -208,7 +208,7 @@ MODULE_DEVICE_TABLE(eisa, hp100_eisa_tbl);
 #endif
 
 #ifdef CONFIG_PCI
-static DEFINE_PCI_DEVICE_TABLE(hp100_pci_tbl) = {
+static const struct pci_device_id hp100_pci_tbl[] = {
 	{PCI_VENDOR_ID_HP, PCI_DEVICE_ID_HP_J2585A, PCI_ANY_ID, PCI_ANY_ID,},
 	{PCI_VENDOR_ID_HP, PCI_DEVICE_ID_HP_J2585B, PCI_ANY_ID, PCI_ANY_ID,},
 	{PCI_VENDOR_ID_HP, PCI_DEVICE_ID_HP_J2970A, PCI_ANY_ID, PCI_ANY_ID,},
@@ -1097,8 +1097,8 @@ static int hp100_open(struct net_device *dev)
 	/* New: if bus is PCI or EISA, interrupts might be shared interrupts */
 	if (request_irq(dev->irq, hp100_interrupt,
 			lp->bus == HP100_BUS_PCI || lp->bus ==
-			HP100_BUS_EISA ? IRQF_SHARED : IRQF_DISABLED,
-			"hp100", dev)) {
+			HP100_BUS_EISA ? IRQF_SHARED : 0,
+			dev->name, dev)) {
 		printk("hp100: %s: unable to get IRQ %d\n", dev->name, dev->irq);
 		return -EAGAIN;
 	}

@@ -64,7 +64,7 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 			part = add_partition(disk, partno, start, length,
 					     ADDPART_FLAG_NONE, NULL);
 			mutex_unlock(&bdev->bd_mutex);
-			return IS_ERR(part) ? PTR_ERR(part) : 0;
+			return PTR_ERR_OR_ZERO(part);
 		case BLKPG_DEL_PARTITION:
 			part = disk_get_part(disk, partno);
 			if (!part)
@@ -278,6 +278,7 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	struct backing_dev_info *bdi;
 	loff_t size;
 	int ret, n;
+	unsigned int max_sectors;
 
 	switch(cmd) {
 	case BLKFLSBUF:
@@ -375,7 +376,9 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKDISCARDZEROES:
 		return put_uint(arg, bdev_discard_zeroes_data(bdev));
 	case BLKSECTGET:
-		return put_ushort(arg, queue_max_sectors(bdev_get_queue(bdev)));
+		max_sectors = min_t(unsigned int, USHRT_MAX,
+				    queue_max_sectors(bdev_get_queue(bdev)));
+		return put_ushort(arg, max_sectors);
 	case BLKROTATIONAL:
 		return put_ushort(arg, !blk_queue_nonrot(bdev_get_queue(bdev)));
 	case BLKRASET:

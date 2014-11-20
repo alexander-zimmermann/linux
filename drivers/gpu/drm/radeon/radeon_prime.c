@@ -65,10 +65,9 @@ struct drm_gem_object *radeon_gem_prime_import_sg_table(struct drm_device *dev,
 	int ret;
 
 	ret = radeon_bo_create(rdev, size, PAGE_SIZE, false,
-			       RADEON_GEM_DOMAIN_GTT, sg, &bo);
+			       RADEON_GEM_DOMAIN_GTT, 0, sg, &bo);
 	if (ret)
 		return ERR_PTR(ret);
-	bo->gem_base.driver_private = bo;
 
 	mutex_lock(&rdev->gem.mutex);
 	list_add_tail(&bo->list, &rdev->gem.objects);
@@ -103,4 +102,12 @@ void radeon_gem_prime_unpin(struct drm_gem_object *obj)
 
 	radeon_bo_unpin(bo);
 	radeon_bo_unreserve(bo);
+}
+
+
+struct reservation_object *radeon_gem_prime_res_obj(struct drm_gem_object *obj)
+{
+	struct radeon_bo *bo = gem_to_radeon_bo(obj);
+
+	return bo->tbo.resv;
 }
